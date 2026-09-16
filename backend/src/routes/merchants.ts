@@ -14,6 +14,7 @@ import {
   upsertMerchant,
   upsertProduct,
 } from "../store.js";
+import { suggestProductTags } from "../agent/subagents/catalog-assist.js";
 
 export const merchantsRouter = Router();
 
@@ -95,6 +96,30 @@ merchantsRouter.get(
       return;
     }
     res.json({ ok: true, orders: listOrders(merchant.id) });
+  },
+);
+
+const suggestTagsSchema = z.object({
+  name: z.string().min(1).max(120),
+  notes: z.string().max(200).optional(),
+});
+
+merchantsRouter.post(
+  "/suggest-tags",
+  requireMerchant,
+  async (req: AuthedRequest, res) => {
+    const parsed = suggestTagsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ ok: false, errors: parsed.error.flatten() });
+      return;
+    }
+    try {
+      const result = await suggestProductTags(parsed.data);
+      res.json({ ok: true, tags: result.tags, source: result.source });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Suggest tags failed";
+      res.status(500).json({ ok: false, message });
+    }
   },
 );
 

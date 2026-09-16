@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { runCommerceAgent } from "../agent/run.js";
+import { runOrchestrator } from "../agent/orchestrator/execute.js";
 import { requireCooker, type AuthedRequest } from "../middleware/auth.js";
 import { getRun } from "../store.js";
 
@@ -9,6 +9,7 @@ export const agentRouter = Router();
 const runSchema = z.object({
   goal: z.string().min(3).max(500),
   pantry: z.array(z.string()).optional().default([]),
+  selectedDish: z.string().min(1).max(120).optional(),
 });
 
 agentRouter.post("/runs", requireCooker, async (req: AuthedRequest, res) => {
@@ -19,24 +20,51 @@ agentRouter.post("/runs", requireCooker, async (req: AuthedRequest, res) => {
   }
 
   try {
-    const run = await runCommerceAgent(parsed.data);
+    const run = await runOrchestrator(parsed.data);
+
+    if (run.status === "no_merchant") {
+      res.status(400).json({
+        ok: false,
+        message: "no signed-in merchant has these items in stock",
+        runId: run.id,
+        status: run.status,
+        intent: run.intent,
+        steps: run.steps,
+        plan: run.plan,
+        missing: run.missing,
+      });
+      return;
+    }
+
+    if (run.status === "failed") {
+      const lastErr = [...run.steps].reverse().find((s) => s.error)?.error;
+      res.status(500).json({
+        ok: false,
+        message: lastErr || "Agent run failed",
+        runId: run.id,
+        status: run.status,
+        intent: run.intent,
+        steps: run.steps,
+      });
+      return;
+    }
+
     res.json({
       ok: true,
       runId: run.id,
+      status: run.status,
+      intent: run.intent,
       steps: run.steps,
       plan: run.plan,
       missing: run.missing,
+      suggestions: run.suggestions ?? [],
       quote: run.quote,
       substitutions: run.quote?.substitutions ?? [],
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Agent run failed";
-    const client =
-      message.includes("no signed-in merchant") ||
-      message.includes("Nothing to buy") ||
-      message.includes("not a real wallet");
-    if (!client) console.error("[agent] run failed:", err);
-    res.status(client ? 400 : 500).json({ ok: false, message });
+    console.error("[agent] run failed:", err);
+    res.status(500).json({ ok: false, message });
   }
 });
 

@@ -26,7 +26,8 @@ npm run dev:frontend   # http://localhost:5174
 
 Health check: `curl http://localhost:4100/health`
 
-**Full wallet + Remix + demo walkthrough:** see [`INSTRUCTIONS.md`](./INSTRUCTIONS.md).
+**Full wallet + Remix + demo walkthrough:** see [`INSTRUCTIONS.md`](./INSTRUCTIONS.md).  
+**Multi-intent orchestration demos:** see [`INSTRUCTIONS-ORCHESTRATION.md`](./INSTRUCTIONS-ORCHESTRATION.md).
 
 ## Environment
 

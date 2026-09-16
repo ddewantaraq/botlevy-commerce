@@ -62,6 +62,7 @@ export function MerchantPage() {
   const [draft, setDraft] = useState(emptyProduct);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState(emptyProduct);
+  const [suggesting, setSuggesting] = useState<"draft" | "edit" | null>(null);
 
   const wrongChain = isConnected && chainId !== CHAIN_ID;
   const signedIn =
@@ -234,6 +235,33 @@ export function MerchantPage() {
     await refresh();
   }
 
+  async function suggestTags(target: "draft" | "edit") {
+    const name = (target === "draft" ? draft.name : editDraft.name).trim();
+    if (!name) {
+      setError("Enter a product name before suggesting tags");
+      return;
+    }
+    setSuggesting(target);
+    setError("");
+    try {
+      const res = await fetch(`${API_URL}/merchants/suggest-tags`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.message || "Suggest tags failed");
+      const tags = (data.tags as string[]).join(", ");
+      if (target === "draft") setDraft((d) => ({ ...d, tags }));
+      else setEditDraft((d) => ({ ...d, tags }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSuggesting(null);
+    }
+  }
+
   async function fulfill(orderId: string) {
     setError("");
     const res = await fetch(`${API_URL}/orders/${orderId}/fulfill`, {
@@ -380,14 +408,24 @@ export function MerchantPage() {
                 className="sm:col-span-2 rounded-md border border-[#e7e7e0] bg-transparent px-3 py-2 text-sm"
               />
             </div>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void addProduct()}
-              className="rounded-md bg-[#0f766e] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
-            >
-              Add to catalog
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={busy || suggesting === "draft" || !draft.name.trim()}
+                onClick={() => void suggestTags("draft")}
+                className="rounded-md border border-[#e7e7e0] px-3 py-1.5 text-sm disabled:opacity-60"
+              >
+                {suggesting === "draft" ? "Suggesting…" : "Suggest tags"}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void addProduct()}
+                className="rounded-md bg-[#0f766e] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                Add to catalog
+              </button>
+            </div>
           </section>
 
           <section className="rounded-xl border border-[#e7e7e0] bg-white/60 p-5">
@@ -423,6 +461,14 @@ export function MerchantPage() {
                         className="sm:col-span-2 rounded-md border border-[#e7e7e0] bg-transparent px-3 py-2 text-sm"
                       />
                       <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={busy || suggesting === "edit"}
+                          onClick={() => void suggestTags("edit")}
+                          className="rounded-md border border-[#e7e7e0] px-3 py-1.5 text-xs disabled:opacity-60"
+                        >
+                          {suggesting === "edit" ? "Suggesting…" : "Suggest tags"}
+                        </button>
                         <button
                           type="button"
                           disabled={busy}

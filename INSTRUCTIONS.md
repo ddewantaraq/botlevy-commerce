@@ -2,6 +2,8 @@
 
 Follow this checklist in order. You need **two wallets** on **BSC Testnet (chain ID 97)**.
 
+> **Week 2 orchestration** (multi-intent: pantry-first, suggestions, cookable, Suggest tags): see [`INSTRUCTIONS-ORCHESTRATION.md`](./INSTRUCTIONS-ORCHESTRATION.md). This file remains the Week 1 pay → fulfill loop.
+
 | Role | Job |
 |------|-----|
 | **Merchant** | SIWE login, receives MockUSDC, fulfills orders |
@@ -214,7 +216,8 @@ npm run demo:agent
 |--------|------|---------|
 | GET | `/health` | Status |
 | GET | `/merchants` | List merchants |
-| POST | `/agent/runs` | `{ goal, pantry? }` → steps + quote |
+| POST | `/agent/runs` | `{ goal, pantry?, selectedDish? }` → `status`, `intent`, `steps`, quote/suggestions |
+| POST | `/merchants/suggest-tags` | Merchant: `{ name }` → suggested tags |
 | POST | `/orders` | `{ quoteId, txHash, payer }` |
 | GET | `/auth/nonce` | SIWE nonce |
 | POST | `/auth/verify` | SIWE session cookie |

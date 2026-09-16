@@ -86,11 +86,30 @@ export type AgentStep = {
   at: string;
 };
 
+export type AgentIntent = "known_dish" | "pantry_first" | "open_goal";
+
+export type AgentRunStatus =
+  | "suggestions"
+  | "cookable"
+  | "quoted"
+  | "no_merchant"
+  | "failed";
+
+export type DishSuggestion = {
+  dish: string;
+  reason: string;
+  ingredientsPreview?: string[];
+};
+
 export type AgentRun = {
   id: string;
   goal: string;
   pantry: string[];
   steps: AgentStep[];
+  intent?: AgentIntent;
+  status: AgentRunStatus;
+  suggestions?: DishSuggestion[];
+  selectedDish?: string;
   plan?: {
     dish: string;
     steps: string[];
