@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+:root {
+  --canvas: #f3f0e8;
+  --ink: #1c1914;
+  --body: #4a453c;
+  --line: #e2ddd2;
+  --accent: #0d6b63;
+  --bubble-user: #0d6b63;
+  --bubble-agent: #ffffff;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  background:
+    radial-gradient(ellipse at top, #ebe6da 0%, transparent 55%),
+    var(--canvas);
+  color: var(--body);
+}

@@ -2,22 +2,27 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
-import { env, debugOllamaEnv } from "./config.js";
+import { env, debugOllamaEnv, uiOrigins } from "./config.js";
 import { seedIfEmpty } from "./seed.js";
 import { apiLimiter } from "./middleware/rate-limit.js";
 import { authRouter } from "./routes/auth.js";
 import { merchantsRouter } from "./routes/merchants.js";
 import { agentRouter } from "./routes/agent.js";
 import { ordersRouter } from "./routes/orders.js";
+import { cookerRouter } from "./routes/cooker.js";
 import { listMerchants, listProducts } from "./store.js";
 
 seedIfEmpty();
 
+const origins = uiOrigins();
 const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
   cors({
-    origin: env.FRONTEND_URL,
+    origin(origin, cb) {
+      if (!origin || origins.includes(origin)) cb(null, true);
+      else cb(null, false);
+    },
     credentials: true,
   }),
 );
@@ -35,6 +40,7 @@ app.get("/health", (_req, res) => {
     ollamaKey: debugOllamaEnv(),
     merchants: listMerchants().length,
     products: listProducts().length,
+    corsOrigins: origins,
   });
 });
 
@@ -42,9 +48,11 @@ app.use("/auth", authRouter);
 app.use("/merchants", merchantsRouter);
 app.use("/agent", agentRouter);
 app.use("/orders", ordersRouter);
+app.use("/cooker", cookerRouter);
 
 app.listen(env.PORT, () => {
   console.log(`[botlevy-commerce] API http://localhost:${env.PORT}`);
   console.log(`[botlevy-commerce] chainId=${env.CHAIN_ID} merchants=${listMerchants().length}`);
+  console.log(`[botlevy-commerce] CORS`, origins);
   console.log("[botlevy-commerce] ollama debug", debugOllamaEnv());
 });

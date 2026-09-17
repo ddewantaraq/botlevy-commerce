@@ -1,7 +1,7 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { SiweMessage } from "siwe";
-import { env, BSC_TESTNET_CHAIN_ID } from "../config.js";
+import { BSC_TESTNET_CHAIN_ID, cookieSecure } from "../config.js";
 import { authLimiter } from "../middleware/rate-limit.js";
 import {
   consumeNonce,
@@ -84,7 +84,7 @@ authRouter.post("/verify", async (req, res) => {
     createSession(sessionId, address, role);
     res.cookie("sid", sessionId, {
       httpOnly: true,
-      secure: env.FRONTEND_URL.startsWith("https"),
+      secure: cookieSecure(),
       sameSite: "lax",
       maxAge: 60 * 60 * 1000,
     });

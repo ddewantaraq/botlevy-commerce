@@ -21,7 +21,8 @@ for (const envPath of envCandidates) {
 const schema = z.object({
   PORT: z.coerce.number().default(4100),
   SESSION_SECRET: z.string().min(16).default("dev-session-secret-change-me"),
-  FRONTEND_URL: z.string().url().default("http://localhost:5174"),
+  COOKER_URL: z.string().default("http://localhost:5174"),
+  MERCHANT_URL: z.string().default("http://localhost:5175"),
   CHAIN_ID: z.coerce.number().default(97),
   BSC_RPC_URL: z
     .string()
@@ -35,6 +36,18 @@ const schema = z.object({
 });
 
 export const env = schema.parse(process.env);
+
+/** Allowed browser origins for CORS (cooker + merchant UIs). */
+export function uiOrigins(): string[] {
+  return [...new Set([env.COOKER_URL, env.MERCHANT_URL].filter(Boolean))];
+}
+
+/** Cookie Secure flag when either UI is served over HTTPS. */
+export function cookieSecure(): boolean {
+  return (
+    env.COOKER_URL.startsWith("https") || env.MERCHANT_URL.startsWith("https")
+  );
+}
 
 /** Safe debug snapshot — never logs the full API key. */
 export function debugOllamaEnv() {

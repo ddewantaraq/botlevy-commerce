@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "demo:agent": "tsx scripts/demo-agent.ts",
-    "smoke:orchestrator": "tsx scripts/smoke-orchestrator.ts"
+    "smoke:orchestrator": "tsx scripts/smoke-orchestrator.ts",
+    "smoke:session": "tsx scripts/smoke-session-message.ts"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",

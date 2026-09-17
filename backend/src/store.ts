@@ -120,6 +120,45 @@ export type AgentRun = {
   createdAt: string;
 };
 
+export type RecipePlan = {
+  dish: string;
+  steps: string[];
+  ingredients: Ingredient[];
+};
+
+export type SavedMenu = {
+  id: string;
+  dish: string;
+  plan: RecipePlan;
+  pantrySnapshot: string[];
+  createdAt: string;
+};
+
+export type CookingSessionStatus = "prep" | "cooking" | "done" | "abandoned";
+
+export type CookingSession = {
+  id: string;
+  cookerAddress: string;
+  status: CookingSessionStatus;
+  runId?: string;
+  menuId?: string;
+  dish: string;
+  plan: RecipePlan;
+  prepChecks: Record<string, boolean>;
+  stepIndex: number;
+  pendingConfirm?: "abandon_replan" | null;
+  quoteId?: string;
+  orderId?: string;
+  updatedAt: string;
+  createdAt: string;
+};
+
+export type CookerProfile = {
+  address: string;
+  pantry: string[];
+  menus: SavedMenu[];
+};
+
 type Session = { address: string; role: SessionRole; createdAt: number };
 type Nonce = { createdAt: number };
 
@@ -129,6 +168,8 @@ type Db = {
   orders: Order[];
   quotes: Quote[];
   runs: AgentRun[];
+  cookerProfiles: CookerProfile[];
+  cookingSessions: CookingSession[];
   sessions: Record<string, Session>;
   nonces: Record<string, Nonce>;
 };
@@ -140,6 +181,8 @@ function emptyDb(): Db {
     orders: [],
     quotes: [],
     runs: [],
+    cookerProfiles: [],
+    cookingSessions: [],
     sessions: {},
     nonces: {},
   };
@@ -153,7 +196,18 @@ function load(): Db {
   ensureDataDir();
   if (!fs.existsSync(runtimePath)) return emptyDb();
   try {
-    return { ...emptyDb(), ...JSON.parse(fs.readFileSync(runtimePath, "utf8")) };
+    const parsed = JSON.parse(fs.readFileSync(runtimePath, "utf8")) as Partial<Db>;
+    return {
+      ...emptyDb(),
+      ...parsed,
+      cookerProfiles: parsed.cookerProfiles ?? [],
+      cookingSessions: parsed.cookingSessions ?? [],
+      merchants: parsed.merchants ?? [],
+      products: parsed.products ?? [],
+      orders: parsed.orders ?? [],
+      quotes: parsed.quotes ?? [],
+      runs: parsed.runs ?? [],
+    };
   } catch {
     return emptyDb();
   }
@@ -161,7 +215,6 @@ function load(): Db {
 
 function save(db: Db) {
   ensureDataDir();
-  const { sessions: _s, nonces: _n, ...persist } = db;
   fs.writeFileSync(
     runtimePath,
     JSON.stringify(
@@ -171,6 +224,8 @@ function save(db: Db) {
         orders: db.orders,
         quotes: db.quotes,
         runs: db.runs.slice(-50),
+        cookerProfiles: db.cookerProfiles,
+        cookingSessions: db.cookingSessions.slice(-100),
       },
       null,
       2,
@@ -337,4 +392,108 @@ export function getRun(id: string) {
 
 export function newId(prefix: string) {
   return `${prefix}_${crypto.randomBytes(6).toString("hex")}`;
+}
+
+function ensureCookerProfile(address: string): CookerProfile {
+  const a = address.toLowerCase();
+  let profile = db.cookerProfiles.find((p) => p.address === a);
+  if (!profile) {
+    profile = { address: a, pantry: [], menus: [] };
+    db.cookerProfiles.push(profile);
+    persist();
+  }
+  return profile;
+}
+
+export function getCookerPantry(address: string): string[] {
+  return [...ensureCookerProfile(address).pantry];
+}
+
+export function setCookerPantry(address: string, pantry: string[]): string[] {
+  const profile = ensureCookerProfile(address);
+  const seen = new Set<string>();
+  profile.pantry = pantry
+    .map((t) => t.toLowerCase().trim())
+    .filter((t) => {
+      if (!t || seen.has(t)) return false;
+      seen.add(t);
+      return true;
+    });
+  persist();
+  return [...profile.pantry];
+}
+
+export function listCookerMenus(address: string): SavedMenu[] {
+  return [...ensureCookerProfile(address).menus];
+}
+
+export function saveCookerMenu(
+  address: string,
+  menu: Omit<SavedMenu, "id" | "createdAt"> & { id?: string },
+): SavedMenu {
+  const profile = ensureCookerProfile(address);
+  const saved: SavedMenu = {
+    id: menu.id ?? newId("menu"),
+    dish: menu.dish,
+    plan: menu.plan,
+    pantrySnapshot: menu.pantrySnapshot,
+    createdAt: new Date().toISOString(),
+  };
+  profile.menus.unshift(saved);
+  profile.menus = profile.menus.slice(0, 30);
+  persist();
+  return saved;
+}
+
+export function deleteCookerMenu(address: string, menuId: string): boolean {
+  const profile = ensureCookerProfile(address);
+  const before = profile.menus.length;
+  profile.menus = profile.menus.filter((m) => m.id !== menuId);
+  if (profile.menus.length === before) return false;
+  persist();
+  return true;
+}
+
+export function getCookerMenu(address: string, menuId: string): SavedMenu | null {
+  return ensureCookerProfile(address).menus.find((m) => m.id === menuId) ?? null;
+}
+
+export function saveCookingSession(session: CookingSession): CookingSession {
+  const idx = db.cookingSessions.findIndex((s) => s.id === session.id);
+  if (idx >= 0) db.cookingSessions[idx] = session;
+  else db.cookingSessions.unshift(session);
+  persist();
+  return session;
+}
+
+export function getCookingSession(id: string): CookingSession | null {
+  return db.cookingSessions.find((s) => s.id === id) ?? null;
+}
+
+export function getActiveCookingSession(address: string): CookingSession | null {
+  const a = address.toLowerCase();
+  return (
+    db.cookingSessions.find(
+      (s) =>
+        s.cookerAddress === a &&
+        (s.status === "prep" || s.status === "cooking"),
+    ) ?? null
+  );
+}
+
+export function abandonActiveSessions(address: string) {
+  const a = address.toLowerCase();
+  let changed = false;
+  for (const s of db.cookingSessions) {
+    if (
+      s.cookerAddress === a &&
+      (s.status === "prep" || s.status === "cooking")
+    ) {
+      s.status = "abandoned";
+      s.pendingConfirm = null;
+      s.updatedAt = new Date().toISOString();
+      changed = true;
+    }
+  }
+  if (changed) persist();
 }

@@ -28,7 +28,7 @@ For wallet setup, faucet, MockUSDC, Ollama, and install, follow **INSTRUCTIONS.m
 
 Complete [`INSTRUCTIONS.md`](./INSTRUCTIONS.md) through **§6 Merchant path** so:
 
-- Backend `http://localhost:4100` and frontend `http://localhost:5174` run
+- Backend `http://localhost:4100`, cooker `http://localhost:5174`, merchant `http://localhost:5175`
 - Merchant SIWE done; `payTo` = merchant wallet
 - Catalog has products the agent can match (or use seed after claim)
 - Cooker wallet has tBNB + mUSDC if you will pay
@@ -47,7 +47,8 @@ curl -s http://localhost:4100/merchants | jq
 ```bash
 cd botlevy-commerce
 npm run dev:backend    # :4100
-npm run dev:frontend   # :5174
+npm run dev:cooker     # :5174
+npm run dev:merchant   # :5175
 ```
 
 ---
@@ -135,7 +136,7 @@ curl -s -X POST http://localhost:4100/agent/runs \
 
 ## 7) Path E — CatalogAssist (Suggest tags)
 
-1. Open http://localhost:5174/merchant → merchant SIWE.  
+1. Open http://localhost:5175 → merchant SIWE.  
 2. Add product: Name = `Daging Sapi Fresh`.  
 3. Click **Suggest tags**.  
 4. Tags field fills with snake_case tags (e.g. `beef`).  

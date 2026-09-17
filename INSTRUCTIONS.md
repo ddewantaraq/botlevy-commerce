@@ -2,7 +2,8 @@
 
 Follow this checklist in order. You need **two wallets** on **BSC Testnet (chain ID 97)**.
 
-> **Week 2 orchestration** (multi-intent: pantry-first, suggestions, cookable, Suggest tags): see [`INSTRUCTIONS-ORCHESTRATION.md`](./INSTRUCTIONS-ORCHESTRATION.md). This file remains the Week 1 pay → fulfill loop.
+> **Week 2 orchestration** (multi-intent API): [`INSTRUCTIONS-ORCHESTRATION.md`](./INSTRUCTIONS-ORCHESTRATION.md).  
+> **Chat + pre-cook + cook-time (wife story):** [`INSTRUCTIONS-COOKING.md`](./INSTRUCTIONS-COOKING.md) — cooker `:5174`, merchant `:5175`.
 
 | Role | Job |
 |------|-----|
@@ -112,11 +113,12 @@ More detail: [`contracts/README.md`](./contracts/README.md).
 ```bash
 cd botlevy-commerce
 cp .env.example .env   # if you have not already
-# edit .env — SESSION_SECRET, MOCK_USDC_*, OLLAMA_*, FRONTEND_URL, VITE_*
+# edit .env — SESSION_SECRET, MOCK_USDC_*, OLLAMA_*, COOKER_URL, MERCHANT_URL, VITE_*
 
 npm install
 npm run dev:backend    # http://localhost:4100
-npm run dev:frontend   # http://localhost:5174
+npm run dev:cooker     # http://localhost:5174
+npm run dev:merchant   # http://localhost:5175
 ```
 
 **Check API:**
@@ -132,7 +134,7 @@ You should see seeded merchant `m_warung_sehat` and several products (shallots s
 
 ## 6) Merchant path
 
-1. Open http://localhost:5174/merchant  
+1. Open http://localhost:5175  
 2. MetaMask → select **merchant** account on chain **97**.  
 3. Connect wallet → **SIWE login**.  
 4. First SIWE on an empty owner claims seed warung `m_warung_sehat` and sets `payTo` to your merchant address.  
@@ -145,21 +147,21 @@ You should see seeded merchant `m_warung_sehat` and several products (shallots s
 
 ## 7) Cook / agent path (happy path)
 
-1. Open http://localhost:5174/ (Agent run).  
+1. Open http://localhost:5174/ (Cooker chat).  
 2. MetaMask → switch to **payer** account (chain 97).  
-3. Connect payer wallet.  
-4. Goal (default is fine): `I want to cook ayam semur tonight`.  
-5. Optional: tick pantry chips (e.g. `salt`) so those are not purchased.  
-6. Click **Start agent run**.  
+3. Connect payer wallet → **SIWE**.  
+4. Goal (chat): `I want to cook ayam semur tonight`.  
+5. Optional: pantry is managed in chat / cook flow.  
+6. Send the message / run until you get a quote.  
 
-**Check — tool step trace appears**, roughly:
+**Check — tool step trace** (expandable in chat), roughly:
 
-`plan_recipe` → `diff_pantry` → `match_catalog` → `apply_substitutions` → `create_quote`
+`classify_intent` → `plan_recipe` → `diff_pantry` → `match_catalog` → `apply_substitutions` → `create_quote`
 
 You should see shallot → onion substitution when shallots are OOS.
 
 7. Review quote total (mUSDC) and `payTo` (merchant).  
-8. Click **Pay with MockUSDC** → approve in MetaMask.  
+8. Click **Pay with MockUSDC** in the agent bubble → approve in MetaMask.  
 9. Wait for confirmation.
 
 **Check:** Order id + BscScan link; tx shows MockUSDC Transfer to merchant.
@@ -168,12 +170,11 @@ You should see shallot → onion substitution when shallots are OOS.
 
 ## 8) Fulfillment
 
-1. Back to http://localhost:5174/merchant (merchant wallet).  
+1. Back to http://localhost:5175 (merchant wallet).  
 2. Orders list shows status **paid**.  
 3. Click **Mark fulfilled**.
 
 **Check:** Status becomes **fulfilled**.
-
 ---
 
 ## 9) Optional: scripted demo
@@ -205,7 +206,7 @@ npm run demo:agent
 | “No MockUSDC Transfer…” | Wrong token address, wrong `payTo`, or tx not mined yet |
 | Agent plan always ayam semur | Missing/invalid `OLLAMA_API_KEY`, Free quota, or model not allowed — commerce tools still run |
 | Merchant products empty | SIWE with a fresh wallet before seed claim; or delete `backend/data/runtime.json` and restart API so seed reloads, then SIWE again |
-| CORS / cookies | `FRONTEND_URL=http://localhost:5174`, frontend on 5174, API on 4100 |
+| CORS / cookies | `COOKER_URL=http://localhost:5174`, `MERCHANT_URL=http://localhost:5175`, API on 4100 |
 | Shallot still in cart | Seed shallots stock is 0 — expect onion substitution in trace |
 
 ---
