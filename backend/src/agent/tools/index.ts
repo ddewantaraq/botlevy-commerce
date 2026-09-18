@@ -1,4 +1,4 @@
-export { toolPlanRecipe, recipeSchema, type PlanResult } from "./recipe.js";
+export { toolPlanRecipe, recipeSchema, RECIPE_TRY_AGAIN, normalizeRecipePayload, type PlanResult } from "./recipe.js";
 export { toolDiffPantry, normalizeTag, normalizePantryTags } from "./pantry.js";
 export {
   eligibleMerchants,

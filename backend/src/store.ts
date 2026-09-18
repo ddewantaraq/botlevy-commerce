@@ -134,7 +134,12 @@ export type SavedMenu = {
   createdAt: string;
 };
 
-export type CookingSessionStatus = "prep" | "cooking" | "done" | "abandoned";
+export type CookingSessionStatus =
+  | "prep"
+  | "cooking"
+  | "post_cook"
+  | "done"
+  | "abandoned";
 
 export type CookingSession = {
   id: string;
@@ -153,10 +158,26 @@ export type CookingSession = {
   createdAt: string;
 };
 
+function isActiveCookingStatus(status: CookingSessionStatus): boolean {
+  return status === "prep" || status === "cooking" || status === "post_cook";
+}
+
 export type CookerProfile = {
   address: string;
   pantry: string[];
   menus: SavedMenu[];
+};
+
+export type PlanningDraftPhase = "await_bahan" | "confirm_gap";
+
+export type PlanningDraft = {
+  cookerAddress: string;
+  dish: string;
+  phase: PlanningDraftPhase;
+  userBahan: string[];
+  plan?: RecipePlan;
+  missing?: Ingredient[];
+  updatedAt: string;
 };
 
 type Session = { address: string; role: SessionRole; createdAt: number };
@@ -170,6 +191,7 @@ type Db = {
   runs: AgentRun[];
   cookerProfiles: CookerProfile[];
   cookingSessions: CookingSession[];
+  planningDrafts: PlanningDraft[];
   sessions: Record<string, Session>;
   nonces: Record<string, Nonce>;
 };
@@ -183,6 +205,7 @@ function emptyDb(): Db {
     runs: [],
     cookerProfiles: [],
     cookingSessions: [],
+    planningDrafts: [],
     sessions: {},
     nonces: {},
   };
@@ -202,6 +225,7 @@ function load(): Db {
       ...parsed,
       cookerProfiles: parsed.cookerProfiles ?? [],
       cookingSessions: parsed.cookingSessions ?? [],
+      planningDrafts: parsed.planningDrafts ?? [],
       merchants: parsed.merchants ?? [],
       products: parsed.products ?? [],
       orders: parsed.orders ?? [],
@@ -226,6 +250,7 @@ function save(db: Db) {
         runs: db.runs.slice(-50),
         cookerProfiles: db.cookerProfiles,
         cookingSessions: db.cookingSessions.slice(-100),
+        planningDrafts: db.planningDrafts.slice(-50),
       },
       null,
       2,
@@ -474,9 +499,7 @@ export function getActiveCookingSession(address: string): CookingSession | null 
   const a = address.toLowerCase();
   return (
     db.cookingSessions.find(
-      (s) =>
-        s.cookerAddress === a &&
-        (s.status === "prep" || s.status === "cooking"),
+      (s) => s.cookerAddress === a && isActiveCookingStatus(s.status),
     ) ?? null
   );
 }
@@ -485,10 +508,7 @@ export function abandonActiveSessions(address: string) {
   const a = address.toLowerCase();
   let changed = false;
   for (const s of db.cookingSessions) {
-    if (
-      s.cookerAddress === a &&
-      (s.status === "prep" || s.status === "cooking")
-    ) {
+    if (s.cookerAddress === a && isActiveCookingStatus(s.status)) {
       s.status = "abandoned";
       s.pendingConfirm = null;
       s.updatedAt = new Date().toISOString();
@@ -496,4 +516,27 @@ export function abandonActiveSessions(address: string) {
     }
   }
   if (changed) persist();
+}
+
+export function getPlanningDraft(address: string): PlanningDraft | null {
+  const a = address.toLowerCase();
+  return db.planningDrafts.find((d) => d.cookerAddress === a) ?? null;
+}
+
+export function setPlanningDraft(draft: PlanningDraft): PlanningDraft {
+  const a = draft.cookerAddress.toLowerCase();
+  draft.cookerAddress = a;
+  draft.updatedAt = new Date().toISOString();
+  const idx = db.planningDrafts.findIndex((d) => d.cookerAddress === a);
+  if (idx >= 0) db.planningDrafts[idx] = draft;
+  else db.planningDrafts.unshift(draft);
+  persist();
+  return draft;
+}
+
+export function clearPlanningDraft(address: string): void {
+  const a = address.toLowerCase();
+  const before = db.planningDrafts.length;
+  db.planningDrafts = db.planningDrafts.filter((d) => d.cookerAddress !== a);
+  if (db.planningDrafts.length !== before) persist();
 }

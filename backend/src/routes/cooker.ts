@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireCooker, type AuthedRequest } from "../middleware/auth.js";
 import {
   abandonActiveSessions,
+  clearPlanningDraft,
   deleteCookerMenu,
   getActiveCookingSession,
   getCookerMenu,
@@ -17,6 +18,7 @@ import {
   type CookingSession,
 } from "../store.js";
 import {
+  applySaveMenu,
   buildPrepChecks,
   formatPrepIntro,
   handleSessionMessage,
@@ -146,6 +148,7 @@ cookerRouter.post("/sessions", (req: AuthedRequest, res) => {
   }
 
   abandonActiveSessions(address);
+  clearPlanningDraft(address);
   const session: CookingSession = {
     id: newId("cook"),
     cookerAddress: address.toLowerCase(),
@@ -173,7 +176,9 @@ cookerRouter.post("/sessions", (req: AuthedRequest, res) => {
 
 const patchSchema = z.object({
   prepChecks: z.record(z.boolean()).optional(),
-  status: z.enum(["prep", "cooking", "done", "abandoned"]).optional(),
+  status: z
+    .enum(["prep", "cooking", "post_cook", "done", "abandoned"])
+    .optional(),
   stepIndex: z.number().int().nonnegative().optional(),
   pendingConfirm: z.enum(["abandon_replan"]).nullable().optional(),
 });
@@ -208,16 +213,20 @@ const messageSchema = z.object({
   text: z.string().min(1).max(500),
 });
 
-cookerRouter.post("/sessions/:id/message", (req: AuthedRequest, res) => {
+cookerRouter.post("/sessions/:id/message", async (req: AuthedRequest, res) => {
   const session = getCookingSession(String(req.params.id));
   if (!session || session.cookerAddress !== req.sessionAddress!.toLowerCase()) {
     res.status(404).json({ ok: false, message: "Session not found" });
     return;
   }
-  if (session.status !== "prep" && session.status !== "cooking") {
+  if (
+    session.status !== "prep" &&
+    session.status !== "cooking" &&
+    session.status !== "post_cook"
+  ) {
     res.status(400).json({
       ok: false,
-      message: "Session is not active (prep/cooking)",
+      message: "Session is not active (prep/cooking/post_cook)",
       session,
     });
     return;
@@ -228,12 +237,47 @@ cookerRouter.post("/sessions/:id/message", (req: AuthedRequest, res) => {
     return;
   }
 
-  const result = handleSessionMessage(session, parsed.data.text);
+  try {
+    const result = await handleSessionMessage(session, parsed.data.text);
+    res.json({
+      ok: true,
+      session: result.session,
+      reply: result.reply,
+      cookStep: result.cookStep,
+      handoff: result.handoff,
+      speak: result.speak,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Session message failed";
+    console.error("[cooker] session message failed:", err);
+    res.status(500).json({ ok: false, message });
+  }
+});
+
+cookerRouter.post("/sessions/:id/save", (req: AuthedRequest, res) => {
+  const session = getCookingSession(String(req.params.id));
+  if (!session || session.cookerAddress !== req.sessionAddress!.toLowerCase()) {
+    res.status(404).json({ ok: false, message: "Session not found" });
+    return;
+  }
+  if (
+    session.status !== "prep" &&
+    session.status !== "cooking" &&
+    session.status !== "post_cook"
+  ) {
+    res.status(400).json({
+      ok: false,
+      message: "Session is not active",
+      session,
+    });
+    return;
+  }
+  const result = applySaveMenu(session);
   res.json({
     ok: true,
     session: result.session,
     reply: result.reply,
-    cookStep: result.cookStep,
+    menuId: result.session.menuId,
     handoff: result.handoff,
     speak: result.speak,
   });

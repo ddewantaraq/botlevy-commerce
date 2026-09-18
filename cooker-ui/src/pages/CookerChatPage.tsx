@@ -23,6 +23,7 @@ import {
   speakText,
   stopSpeaking,
 } from "@botlevy-commerce/shared";
+import { MicIcon } from "../components/MicIcon";
 
 type Quote = {
   id: string;
@@ -44,7 +45,7 @@ type Suggestion = { dish: string; reason: string; ingredientsPreview?: string[] 
 
 type CookingSession = {
   id: string;
-  status: "prep" | "cooking" | "done" | "abandoned";
+  status: "prep" | "cooking" | "post_cook" | "done" | "abandoned";
   dish: string;
   plan: Plan;
   prepChecks: Record<string, boolean>;
@@ -201,15 +202,37 @@ export function CookerChatPage() {
       return;
     }
 
+    if (data.status === "clarify") {
+      push({
+        role: "agent",
+        text: data.message || "Mau mulai rencana masak baru?",
+        kind: "text",
+      });
+      return;
+    }
+
+    if (data.status === "ask_bahan" || data.status === "confirm_gap") {
+      push({
+        role: "agent",
+        text: data.message || (data.status === "ask_bahan"
+          ? "Sebutkan bahan yang sudah kamu punya."
+          : "Apakah sudah benar?"),
+        kind: "plan_result",
+        status: data.status,
+        plan: data.plan,
+      });
+      return;
+    }
+
     let text = "";
     if (data.status === "suggestions") {
       text = "Beberapa ide menu dari bahanmu — pilih salah satu:";
     } else if (data.status === "cookable") {
-      text = `Resep **${data.plan?.dish}** siap. Semua bahan sudah ada di pantry — mulai pre-cook?`;
+      text = `Resep **${data.plan?.dish}** siap. Semua bahan sudah ada — mulai pre-cook?`;
     } else if (data.status === "quoted") {
       text = `Resep **${data.plan?.dish}**. Ada bahan kurang — quote warung siap dibayar.`;
     } else {
-      text = `Status: ${data.status}`;
+      text = data.message || `Status: ${data.status}`;
     }
 
     push({
@@ -256,13 +279,7 @@ export function CookerChatPage() {
       plan: data.session.plan,
     });
     if (data.speak) speakText(data.speak);
-    if (data.session.status === "done" && data.session.plan) {
-      // offer save via follow-up is in reply; ensure plan on message for button
-    }
-    if (data.handoff) {
-      setSession(null);
-    }
-    if (data.session.status === "abandoned") {
+    if (data.handoff || data.session.status === "abandoned" || data.session.status === "done") {
       setSession(null);
     }
   }
@@ -281,7 +298,9 @@ export function CookerChatPage() {
     try {
       const active =
         session &&
-        (session.status === "prep" || session.status === "cooking");
+        (session.status === "prep" ||
+          session.status === "cooking" ||
+          session.status === "post_cook");
       if (active) {
         await sendSessionMessage(text);
       } else {
@@ -388,6 +407,27 @@ export function CookerChatPage() {
   }
 
   async function saveMenu(plan: Plan) {
+    if (
+      session &&
+      (session.status === "prep" ||
+        session.status === "cooking" ||
+        session.status === "post_cook")
+    ) {
+      const res = await fetch(`${API_URL}/cooker/sessions/${session.id}/save`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (data.ok) {
+        push({
+          role: "agent",
+          text: data.reply || `Menu **${plan.dish}** tersimpan.`,
+          kind: "text",
+        });
+        setSession(null);
+        return;
+      }
+    }
     const res = await fetch(`${API_URL}/cooker/menus`, {
       method: "POST",
       credentials: "include",
@@ -418,7 +458,11 @@ export function CookerChatPage() {
     setError("");
     rec.onresult = (ev) => {
       const transcript = ev.results[0]?.[0]?.transcript?.trim();
-      if (transcript) void handleSend(transcript);
+      if (transcript) {
+        // Soft client normalize; server normalizeUtterance is source of truth
+        const soft = transcript.replace(/\s+/g, " ").trim();
+        void handleSend(soft);
+      }
     };
     rec.onerror = () => {
       setListening(false);
@@ -600,7 +644,9 @@ export function CookerChatPage() {
                 {m.plan &&
                 (m.status === "cookable" ||
                   session?.status === "done" ||
-                  m.kind === "cook_step") ? (
+                  session?.status === "post_cook" ||
+                  m.kind === "cook_step" ||
+                  m.kind === "prep") ? (
                   <button
                     type="button"
                     onClick={() => void saveMenu(m.plan!)}
@@ -664,16 +710,18 @@ export function CookerChatPage() {
             />
             <button
               type="button"
-              title={micSupported ? "Voice" : "Voice tidak didukung"}
+              title={micSupported ? "Voice input" : "Voice tidak didukung"}
+              aria-label={micSupported ? "Voice input" : "Voice tidak didukung"}
+              aria-pressed={listening}
               disabled={!signedIn || busy || listening || !micSupported}
               onClick={() => startMic()}
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border text-lg ${
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ${
                 listening
-                  ? "border-red-400 bg-red-50 text-red-700"
-                  : "border-[var(--line)] bg-white"
+                  ? "animate-pulse border-red-400 bg-red-50 text-red-600"
+                  : "border-[var(--line)] bg-white text-[var(--ink)]"
               } disabled:opacity-40`}
             >
-              {listening ? "…" : "🎤"}
+              <MicIcon />
             </button>
             <button
               type="button"

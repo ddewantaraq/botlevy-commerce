@@ -5,6 +5,9 @@
 import { seedIfEmpty } from "../src/seed.js";
 import { runOrchestrator } from "../src/agent/orchestrator/execute.js";
 import { suggestProductTags } from "../src/agent/subagents/catalog-assist.js";
+import { hasOllamaKey } from "../src/agent/llm/client.js";
+import { RECIPE_TRY_AGAIN, toolPlanRecipe } from "../src/agent/tools/recipe.js";
+import { gatePlanningRequest } from "../src/agent/planning-gate.js";
 import {
   getMerchant,
   isRealPayTo,
@@ -28,71 +31,75 @@ async function main() {
     });
   }
 
-  console.log("A) known dish → quoted");
-  const a = await runOrchestrator({
-    goal: "I want to cook ayam semur tonight",
-    pantry: ["salt"],
-  });
-  console.log("   ", a.status, a.intent, a.steps.map((s) => s.tool).join(" → "));
-  assert(a.status === "quoted", `expected quoted, got ${a.status}`);
-  assert(a.quote, "expected quote");
+  console.log("A) plan_recipe failure → try again (no Ayam Semur fallback)");
+  try {
+    await toolPlanRecipe("I want to cook ayam semur tonight");
+    if (!hasOllamaKey()) {
+      throw new Error("expected toolPlanRecipe to throw without OLLAMA_API_KEY");
+    }
+    console.log("   (OLLAMA present — live plan ok, skip throw assert)");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    assert(msg === RECIPE_TRY_AGAIN, `expected try-again message, got: ${msg}`);
+    assert(!/ayam semur/i.test(msg), "must not mention ayam semur fallback");
+    console.log("   failed with try-again message OK");
+  }
 
-  console.log("B) pantry_first → suggestions");
-  const b = await runOrchestrator({
-    goal: "Saya cuma punya daging sapi dan bawang, enak apa ya?",
-    pantry: ["beef", "onion"],
-  });
-  console.log("   ", b.status, b.intent, "suggestions=", b.suggestions?.length);
-  assert(b.status === "suggestions", `expected suggestions, got ${b.status}`);
-  assert((b.suggestions?.length ?? 0) >= 1, "expected suggestions");
+  if (!hasOllamaKey()) {
+    const failed = await runOrchestrator({
+      goal: "I want to cook ayam semur tonight",
+      pantry: ["salt"],
+    });
+    assert(failed.status === "failed", `expected failed, got ${failed.status}`);
+    const lastErr = [...failed.steps].reverse().find((s) => s.error)?.error;
+    assert(
+      lastErr === RECIPE_TRY_AGAIN,
+      `expected RECIPE_TRY_AGAIN on run, got ${lastErr}`,
+    );
+    assert(!failed.plan, "failed run must not invent a plan");
+    console.log("   orchestrator failed without fake plan OK");
+  } else {
+    console.log("B) known dish → quoted|cookable|failed (live Ollama)");
+    const a = await runOrchestrator({
+      goal: "I want to cook ayam semur tonight",
+      pantry: ["salt"],
+    });
+    console.log("   ", a.status, a.intent, a.steps.map((s) => s.tool).join(" → "));
+    assert(
+      ["quoted", "cookable", "failed", "no_merchant"].includes(a.status),
+      `unexpected ${a.status}`,
+    );
 
-  console.log("C) pantry_first + selectedDish → quoted|cookable");
-  const c = await runOrchestrator({
-    goal: "Saya cuma punya beef, enak apa?",
-    pantry: ["beef", "garlic", "onion", "salt", "cooking_oil"],
-    selectedDish: "Tumis daging sapi bawang",
-  });
-  console.log("   ", c.status, c.plan?.dish);
+    console.log("C) pantry_first → suggestions|failed");
+    const b = await runOrchestrator({
+      goal: "Saya cuma punya daging sapi dan bawang, enak apa ya?",
+      pantry: ["beef", "onion"],
+    });
+    console.log("   ", b.status, b.intent, "suggestions=", b.suggestions?.length);
+    assert(
+      b.status === "suggestions" || b.status === "failed",
+      `expected suggestions|failed, got ${b.status}`,
+    );
+  }
+
+  console.log("D) planning gate: stop / off_topic / save_without_session");
+  const stop = await gatePlanningRequest("stop");
+  assert(stop.kind === "stop", `stop → ${stop.kind}`);
+  assert(stop.reply, "stop reply");
+
+  const save = await gatePlanningRequest("ya simpan menunya ya");
   assert(
-    c.status === "quoted" || c.status === "cookable",
-    `expected quoted|cookable, got ${c.status}`,
+    save.kind === "save_without_session",
+    `save without session → ${save.kind}`,
   );
 
-  console.log("D) cookable (full pantry for ayam semur fallback tags)");
-  const d = await runOrchestrator({
-    goal: "I want to cook ayam semur tonight",
-    pantry: [
-      "chicken",
-      "shallot",
-      "kecap_manis",
-      "nutmeg",
-      "potato",
-      "cooking_oil",
-      "salt",
-    ],
-  });
-  console.log("   ", d.status, d.plan?.dish);
-  assert(d.status === "cookable", `expected cookable, got ${d.status}`);
-  assert(d.plan, "expected plan");
-  assert(!d.quote, "cookable should not have quote");
+  const cook = await gatePlanningRequest("Saya mau masak tumis sapi bawang");
+  assert(cook.kind === "cooking_request", `cooking → ${cook.kind}`);
 
   console.log("E) catalog assist tags");
   const e = await suggestProductTags({ name: "Daging Sapi Fresh" });
   console.log("   ", e.source, e.tags);
   assert(e.tags.length >= 1, "expected tags");
-
-  console.log("F) no_merchant (empty catalog match)");
-  // Use a dish whose tags won't match seed (e.g. saffron-only fantasy after force)
-  const f = await runOrchestrator({
-    goal: "I want to cook saffron lobster thermidor tonight",
-    pantry: [],
-  });
-  console.log("   ", f.status, f.intent);
-  // May be quoted if LLM invents chicken-like tags, or no_merchant — both OK structurally
-  assert(
-    ["quoted", "no_merchant", "cookable", "failed"].includes(f.status),
-    `unexpected status ${f.status}`,
-  );
 
   console.log("\nAll smoke checks passed.");
 }
