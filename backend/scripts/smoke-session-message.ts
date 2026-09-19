@@ -5,6 +5,7 @@
 import {
   handleSessionMessage,
   buildPrepChecks,
+  formatPrepIntro,
   normalizeUtterance,
 } from "../src/cooker/session-message.js";
 import { listCookerMenus } from "../src/store.js";
@@ -40,6 +41,36 @@ async function main() {
   assert(
     normalizeUtterance("Mulai masak.") === "mulai masak",
     "normalize punctuation",
+  );
+
+  // Prep copy: names not tags; no Centang di chat
+  const soto: CookingSession = {
+    id: "cook_soto",
+    cookerAddress: "0xabc",
+    status: "prep",
+    dish: "Soto Sapi",
+    plan: {
+      dish: "Soto Sapi",
+      steps: ["Rebus", "Sajikan"],
+      ingredients: [
+        { tag: "bay_leaf", name: "Daun salam", qty: 2, unit: "lembar" },
+        { tag: "beef", name: "Daging sapi", qty: 300, unit: "g" },
+      ],
+    },
+    prepChecks: buildPrepChecks([{ tag: "bay_leaf" }, { tag: "beef" }]),
+    stepIndex: 0,
+    pendingConfirm: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  const intro = formatPrepIntro(soto);
+  assert(/Daun salam/.test(intro), "shows ingredient name Daun salam");
+  assert(/Daging sapi/.test(intro), "shows ingredient name Daging sapi");
+  assert(!/\bbay_leaf\b/.test(intro), "does not show raw tag bay_leaf");
+  assert(!/Centang di chat/i.test(intro), "no Centang di chat");
+  assert(
+    /bilang atau ketik \*\*mulai masak\*\*/i.test(intro),
+    "speak/chat mulai masak instruction",
   );
 
   let s = fresh();

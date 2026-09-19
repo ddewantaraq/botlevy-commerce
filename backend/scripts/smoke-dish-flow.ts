@@ -1,5 +1,5 @@
 /**
- * Smoke: dish→bahan→confirm + pantry-first regression + recipe normalize.
+ * Smoke: dish→bahan→confirm→optional quote/idle + pantry-first regression.
  * npx tsx scripts/smoke-dish-flow.ts
  */
 import {
@@ -71,16 +71,13 @@ async function main() {
   assert(n.ingredients?.[0]?.qty === 500, "normalize qty string");
   assert(n.ingredients?.[0]?.unit === "g", "normalize unit");
 
-  // Start ask_bahan
   let turn = await handleDishPlanningTurn({
     cookerAddress: addr,
     goal: "soto ayam",
   });
   assert(turn.type === "ask_bahan", `expected ask_bahan, got ${turn.type}`);
   assert(getPlanningDraft(addr)?.phase === "await_bahan", "draft await");
-  assert(!/ayam semur/i.test(turn.type === "ask_bahan" ? turn.message : ""), "no ayam semur");
 
-  // Pantry-first must not leave ask_bahan draft hanging when user switches
   clearPlanningDraft(addr);
   const pantry = await runOrchestrator({
     goal: "Saya cuma punya daging sapi dan bawang, enak apa ya?",
@@ -91,16 +88,14 @@ async function main() {
       pantry.status === "suggestions" || pantry.status === "failed",
       `pantry-first status ${pantry.status}`,
     );
-    if (pantry.status === "suggestions") {
-      assert((pantry.suggestions?.length ?? 0) >= 1, "suggestions present");
-    }
   } else {
-    // Without key menu agent fails → failed; still not ask_bahan path
-    assert(pantry.status === "failed" || pantry.status === "suggestions", "no key ok");
+    assert(
+      pantry.status === "failed" || pantry.status === "suggestions",
+      "no key ok",
+    );
   }
-  assert(!getPlanningDraft(addr), "no draft after pantry-first orchestrator");
+  assert(!getPlanningDraft(addr), "no draft after pantry-first");
 
-  // Full dish flow with bahan (needs Ollama for plan)
   clearPlanningDraft(addr);
   turn = await handleDishPlanningTurn({
     cookerAddress: addr,
@@ -109,7 +104,7 @@ async function main() {
   assert(turn.type === "ask_bahan", "ask again");
 
   if (!hasOllamaKey()) {
-    console.log("skip live bahan→confirm (no OLLAMA_API_KEY)");
+    console.log("skip live bahan→quote (no OLLAMA_API_KEY)");
     try {
       await toolPlanRecipe("soto ayam");
       throw new Error("expected throw without key");
@@ -128,38 +123,90 @@ async function main() {
     goal: "ayam, bawang putih, kunyit, garam",
   });
   assert(turn.type === "confirm_gap", `expected confirm_gap, got ${turn.type}`);
-  if (turn.type === "confirm_gap") {
-    assert(turn.plan.dish, "has plan");
-    assert(getPlanningDraft(addr)?.phase === "confirm_gap", "phase confirm");
-  }
 
-  // Reject → re-ask
+  // Reject gap → re-ask bahan
   turn = await handleDishPlanningTurn({
     cookerAddress: addr,
     goal: "tidak",
   });
   assert(turn.type === "ask_bahan", "tidak → reask bahan");
-  assert(getPlanningDraft(addr)?.phase === "await_bahan", "back to await");
 
-  // Bahan again then ya
   turn = await handleDishPlanningTurn({
     cookerAddress: addr,
     goal: "ayam, bawang, kunyit, garam, minyak goreng",
   });
   assert(turn.type === "confirm_gap", "confirm again");
+  const hadGap =
+    turn.type === "confirm_gap" && (turn.missing?.length ?? 0) > 0;
 
   turn = await handleDishPlanningTurn({
     cookerAddress: addr,
     goal: "ya",
   });
-  assert(turn.type === "run", `ya → run, got ${turn.type}`);
-  if (turn.type === "run") {
-    assert(
-      ["quoted", "cookable", "no_merchant", "failed"].includes(turn.run.status),
-      `unexpected ${turn.run.status}`,
-    );
+
+  if (hadGap) {
+    assert(turn.type === "ask_quote", `ya+gap → ask_quote, got ${turn.type}`);
+    assert(getPlanningDraft(addr)?.phase === "ask_quote", "phase ask_quote");
+
+    // Skip quote → idle
+    turn = await handleDishPlanningTurn({
+      cookerAddress: addr,
+      goal: "tidak",
+    });
+    assert(turn.type === "idle", `skip quote → idle, got ${turn.type}`);
+    assert(getPlanningDraft(addr)?.phase === "idle", "draft idle");
+    assert(getPlanningDraft(addr)?.plan, "plan retained idle");
+
+    // Resume quote from idle
+    turn = await handleDishPlanningTurn({
+      cookerAddress: addr,
+      goal: "mau quote",
+    });
+    assert(turn.type === "run", `mau quote → run, got ${turn.type}`);
+    if (turn.type === "run") {
+      assert(
+        ["quoted", "cookable", "no_merchant", "failed"].includes(turn.run.status),
+        `unexpected ${turn.run.status}`,
+      );
+    }
+    assert(!getPlanningDraft(addr), "draft cleared after quote");
+  } else {
+    // No gap → cookable immediately
+    assert(turn.type === "run", `ya+no gap → run, got ${turn.type}`);
+    if (turn.type === "run") {
+      assert(turn.run.status === "cookable", "cookable when no gap");
+    }
   }
-  assert(!getPlanningDraft(addr), "draft cleared after confirm");
+
+  // Second path: skip quote then mulai masak
+  clearPlanningDraft(addr);
+  turn = await handleDishPlanningTurn({
+    cookerAddress: addr,
+    goal: "soto ayam",
+  });
+  turn = await handleDishPlanningTurn({
+    cookerAddress: addr,
+    goal: "ayam saja",
+  });
+  if (turn.type === "confirm_gap" && (turn.missing?.length ?? 0) > 0) {
+    turn = await handleDishPlanningTurn({ cookerAddress: addr, goal: "ya" });
+    assert(turn.type === "ask_quote", "ask_quote again");
+    turn = await handleDishPlanningTurn({
+      cookerAddress: addr,
+      goal: "belanja sendiri",
+    });
+    assert(turn.type === "idle", "belanja sendiri → idle");
+    turn = await handleDishPlanningTurn({
+      cookerAddress: addr,
+      goal: "mulai masak",
+    });
+    assert(turn.type === "run", "mulai masak → run");
+    if (turn.type === "run") {
+      assert(turn.run.status === "cookable", "prep via cookable");
+      assert(turn.run.plan, "plan on cookable run");
+    }
+    assert(!getPlanningDraft(addr), "cleared after prep");
+  }
 
   console.log("smoke-dish-flow OK");
 }

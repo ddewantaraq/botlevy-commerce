@@ -1,20 +1,31 @@
 import type { AgentRun, Ingredient, PlanningDraft, RecipePlan } from "../store.js";
 import {
   clearPlanningDraft,
+  getLastPlanningPantry,
   getPlanningDraft,
+  markReadyForPrep,
   newId,
   saveRun,
   setPlanningDraft,
 } from "../store.js";
+import {
+  classifyConfirmIntent,
+  isAffirmative,
+  isNegative,
+  normalizeConfirmText,
+} from "../cooker/confirm-intent.js";
 import {
   classifyIntentRules,
   looksLikeBareDish,
 } from "./subagents/classify-intent.js";
 import { runMerchantAgent } from "./subagents/merchant-agent.js";
 import { runRecipeAgent } from "./subagents/recipe-agent.js";
-import { normalizePantryTags, toolDiffPantry } from "./tools/pantry.js";
+import { normalizePantryTags, parseBahanList, toolDiffPantry } from "./tools/pantry.js";
+import { detectReplyLang, pickCopy, type ReplyLang } from "./reply-lang.js";
 import type { OrchestratorContext } from "./types.js";
 import { appendStep } from "./types.js";
+
+export { parseBahanList } from "./tools/pantry.js";
 
 export type DishFlowResult =
   | { type: "passthrough" }
@@ -26,6 +37,23 @@ export type DishFlowResult =
       plan: RecipePlan;
       missing: Ingredient[];
       userBahan: string[];
+    }
+  | {
+      type: "ask_quote";
+      dish: string;
+      message: string;
+      plan: RecipePlan;
+      missing: Ingredient[];
+      userBahan: string[];
+    }
+  | {
+      type: "idle";
+      dish: string;
+      message: string;
+      plan?: RecipePlan;
+      missing?: Ingredient[];
+      userBahan: string[];
+      runId?: string;
     }
   | { type: "run"; run: AgentRun };
 
@@ -62,53 +90,104 @@ export function extractInlineBahan(goal: string): string[] | null {
   return null;
 }
 
-export function parseBahanList(text: string): string[] {
-  const chunks = text
-    .split(/,| dan | & |\n|;/i)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) =>
-      s
-        .replace(/^(ada|punya|saya\s+punya|cuma|cuman|hanya)\s+/i, "")
-        .replace(/\s+(siap|sudah)$/i, "")
-        .trim(),
-    );
-  return normalizePantryTags(chunks);
-}
-
-function isYes(t: string): boolean {
-  const n = t.trim().toLowerCase();
-  return /^(ya|yes|y|iya|betul|benar|ok|oke|setuju|benar\s+semua)$/.test(n);
-}
-
-function isNo(t: string): boolean {
-  const n = t.trim().toLowerCase();
+function isWantQuote(t: string): boolean {
+  const n = normalizeConfirmText(t);
+  if (isAffirmative(n)) return true;
   return (
-    /^(tidak|no|nggak|gak|salah|bukan|ganti)$/.test(n) ||
-    /\b(tidak|salah|ganti\s+bahan|input\s+lagi)\b/.test(n)
+    /^(quote|mau quote|butuh quote|minta quote|iya quote)$/.test(n) ||
+    /\b(mau\s+quote|butuh\s+quote|minta\s+quote|pesan\s+dari\s+warung)\b/.test(n)
   );
 }
+
+function isSkipQuote(t: string): boolean {
+  const n = normalizeConfirmText(t);
+  if (isNegative(n)) return true;
+  return (
+    /^(skip|belanja sendiri|beli sendiri|gak usah|tidak usah)$/.test(n) ||
+    /\b(belanja\s+sendiri|beli\s+sendiri|gak\s+usah\s+quote|tanpa\s+quote|skip\s+quote)\b/.test(
+      n,
+    )
+  );
+}
+
+function isStartPrep(t: string): boolean {
+  const n = normalizeConfirmText(t);
+  return (
+    /^(mulai|mulai masak|siapkan|prep|pre-cook|masak sekarang|start)$/.test(n) ||
+    /\b(mulai\s+masak|siapkan\s+bahan|start\s+prep|start\s+cooking|pre-?cook)\b/.test(
+      n,
+    )
+  );
+}
+
+export { isStartPrep };
 
 function formatGapMessage(
   dish: string,
   userBahan: string[],
   missing: Ingredient[],
+  lang: ReplyLang,
 ): string {
   const have =
-    userBahan.length > 0 ? userBahan.join(", ") : "(belum ada yang dicatat)";
+    userBahan.length > 0 ? userBahan.join(", ") : pickCopy(lang, "(belum ada)", "(none listed)");
   if (missing.length === 0) {
-    return `Resep **${dish}** — dari bahan yang kamu sebut (**${have}**), sepertinya sudah cukup.\n\nApakah ini sudah benar? (ya / tidak)`;
+    return pickCopy(
+      lang,
+      `Resep **${dish}** — dari bahan yang kamu sebut (**${have}**), sepertinya sudah cukup.\n\nApakah ini sudah benar? Bilang **ya** atau **tidak**.`,
+      `Recipe **${dish}** — with what you listed (**${have}**), it looks complete.\n\nIs this correct? Say **yes** or **no**.`,
+    );
   }
   const gap = missing.map((m) => `• ${m.name} (${m.tag})`).join("\n");
-  return `Resep **${dish}**. Bahan yang kamu sebut: **${have}**.\n\nYang masih kurang (perlu dibeli):\n${gap}\n\nApakah daftar ini sudah benar? (ya / tidak)`;
+  return pickCopy(
+    lang,
+    `Resep **${dish}**. Bahan yang kamu sebut: **${have}**.\n\nYang masih kurang:\n${gap}\n\nApakah daftar ini sudah benar? Bilang **ya** atau **tidak**.`,
+    `Recipe **${dish}**. You listed: **${have}**.\n\nStill missing:\n${gap}\n\nIs this list correct? Say **yes** or **no**.`,
+  );
 }
 
-function askBahanMessage(dish: string): string {
-  return `Oke, **${dish}**. Bahan apa yang sudah kamu punya? Sebutkan ya (mis. ayam, bawang, kunyit).`;
+function askBahanMessage(dish: string, lang: ReplyLang): string {
+  return pickCopy(
+    lang,
+    `Oke, **${dish}**. Bahan apa yang sudah kamu punya? Sebutkan ya (mis. ayam, bawang, kunyit).`,
+    `Got it, **${dish}**. What ingredients do you already have? List them (e.g. chicken, onion, turmeric).`,
+  );
 }
 
-function reaskBahanMessage(dish: string): string {
-  return `Oke, sebutkan lagi bahan untuk **${dish}** yang sudah kamu punya.`;
+function reaskBahanMessage(dish: string, lang: ReplyLang): string {
+  return pickCopy(
+    lang,
+    `Oke, sebutkan lagi bahan untuk **${dish}** yang sudah kamu punya.`,
+    `OK — list the ingredients you have for **${dish}** again.`,
+  );
+}
+
+function askQuoteMessage(
+  dish: string,
+  missing: Ingredient[],
+  lang: ReplyLang,
+): string {
+  const gap = missing.map((m) => m.name).join(", ");
+  return pickCopy(
+    lang,
+    `Bahan kurang untuk **${dish}**: ${gap}.\n\nMau **quote** dari warung, atau belanja sendiri? Bilang **ya** = quote / **tidak** = belanja sendiri.`,
+    `Missing for **${dish}**: ${gap}.\n\nWant a warung **quote**, or buy on your own? Say **yes** = quote / **no** = buy yourself.`,
+  );
+}
+
+function idleMessage(dish: string, lang: ReplyLang): string {
+  return pickCopy(
+    lang,
+    `Oke — kamu belanja sendiri. Resep **${dish}** tetap tersimpan.\n\nBilang **mulai masak** kalau siap, **mau quote** kalau berubah pikiran, atau sebut menu baru.`,
+    `OK — you'll buy yourself. Recipe **${dish}** is saved here.\n\nSay **start cooking** when ready, **want quote** if you change your mind, or name a new dish.`,
+  );
+}
+
+function idleNudge(dish: string, lang: ReplyLang): string {
+  return pickCopy(
+    lang,
+    `Masih di resep **${dish}**. Bilang **mau quote**, **mulai masak**, atau sebut menu / bahan baru.`,
+    `Still on **${dish}**. Say **want quote**, **start cooking**, or name a new dish / ingredients.`,
+  );
 }
 
 async function planAndGap(
@@ -132,7 +211,33 @@ async function planAndGap(
   return { plan: ctx.plan, missing, steps: ctx.steps };
 }
 
-function finalizeQuoteOrCookable(
+function saveCookableRun(draft: PlanningDraft, goal: string): AgentRun {
+  const id = newId("run");
+  const createdAt = new Date().toISOString();
+  clearPlanningDraft(draft.cookerAddress);
+  const run = saveRun({
+    id,
+    goal,
+    pantry: draft.userBahan,
+    steps: [
+      {
+        tool: "idle_to_cookable",
+        result: { dish: draft.dish },
+        at: createdAt,
+      },
+    ],
+    intent: "known_dish",
+    status: "cookable",
+    selectedDish: draft.dish,
+    plan: draft.plan,
+    missing: [],
+    createdAt,
+  });
+  markReadyForPrep(draft.cookerAddress, run.id);
+  return run;
+}
+
+function finalizeQuote(
   draft: PlanningDraft,
   goal: string,
 ): AgentRun {
@@ -147,15 +252,14 @@ function finalizeQuoteOrCookable(
     missing: draft.missing ?? [],
     steps: [],
   };
-  appendStep(ctx, "confirm_gap", { confirmed: true }, {
+  appendStep(ctx, "ask_quote", { confirmed: true }, {
     dish: draft.dish,
     missingCount: ctx.missing?.length ?? 0,
   });
 
   if (!ctx.missing || ctx.missing.length === 0) {
-    ctx.status = "cookable";
     clearPlanningDraft(draft.cookerAddress);
-    return saveRun({
+    const run = saveRun({
       id,
       goal,
       pantry: draft.userBahan,
@@ -167,12 +271,14 @@ function finalizeQuoteOrCookable(
       missing: [],
       createdAt,
     });
+    markReadyForPrep(draft.cookerAddress, run.id);
+    return run;
   }
 
   const result = runMerchantAgent(ctx);
   clearPlanningDraft(draft.cookerAddress);
   if (result.ok) {
-    return saveRun({
+    const run = saveRun({
       id,
       goal,
       pantry: draft.userBahan,
@@ -185,6 +291,8 @@ function finalizeQuoteOrCookable(
       quote: result.quote,
       createdAt,
     });
+    markReadyForPrep(draft.cookerAddress, run.id);
+    return run;
   }
   return saveRun({
     id,
@@ -201,7 +309,78 @@ function finalizeQuoteOrCookable(
 }
 
 /**
- * Multi-turn dish → bahan → confirm gap → quote.
+ * After suggestion pick (click or chat match): plan + gap using pantry chips,
+ * then ask_quote if missing (no ask_bahan).
+ */
+export async function beginCommercePick(opts: {
+  cookerAddress: string;
+  dish: string;
+  pantry: string[];
+  goal: string;
+}): Promise<DishFlowResult> {
+  const address = opts.cookerAddress.toLowerCase();
+  const lang = detectReplyLang(opts.goal);
+  const carried = getLastPlanningPantry(address);
+  const userBahan = normalizePantryTags([...(opts.pantry ?? []), ...carried]);
+  clearPlanningDraft(address);
+
+  try {
+    const { plan, missing } = await planAndGap(opts.dish, userBahan);
+    if (missing.length === 0) {
+      const draft: PlanningDraft = {
+        cookerAddress: address,
+        dish: opts.dish,
+        phase: "idle",
+        userBahan,
+        plan,
+        missing: [],
+        updatedAt: new Date().toISOString(),
+      };
+      return { type: "run", run: saveCookableRun(draft, opts.goal) };
+    }
+    setPlanningDraft({
+      cookerAddress: address,
+      dish: opts.dish,
+      phase: "ask_quote",
+      userBahan,
+      plan,
+      missing,
+      updatedAt: new Date().toISOString(),
+    });
+    return {
+      type: "ask_quote",
+      dish: opts.dish,
+      message: askQuoteMessage(opts.dish, missing, lang),
+      plan,
+      missing,
+      userBahan,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      type: "run",
+      run: saveRun({
+        id: newId("run"),
+        goal: opts.goal,
+        pantry: userBahan,
+        steps: [
+          {
+            tool: "plan_recipe",
+            error: message,
+            at: new Date().toISOString(),
+          },
+        ],
+        intent: "known_dish",
+        status: "failed",
+        selectedDish: opts.dish,
+        createdAt: new Date().toISOString(),
+      }),
+    };
+  }
+}
+
+/**
+ * Multi-turn dish → bahan → confirm gap → optional quote → idle.
  * Returns passthrough for pantry_first / selectedDish / non-dish goals.
  */
 export async function handleDishPlanningTurn(opts: {
@@ -211,6 +390,7 @@ export async function handleDishPlanningTurn(opts: {
 }): Promise<DishFlowResult> {
   const address = opts.cookerAddress.toLowerCase();
   const goal = opts.goal.trim();
+  const lang = detectReplyLang(goal);
 
   // Suggestion pick → existing orchestrator commerce path
   if (opts.selectedDish?.trim()) {
@@ -228,9 +408,16 @@ export async function handleDishPlanningTurn(opts: {
 
   const draft = getPlanningDraft(address);
 
-  // --- Continue confirm_gap ---
-  if (draft?.phase === "confirm_gap") {
-    if (isYes(goal)) {
+  // --- ask_quote: want merchant quote or buy own ---
+  if (draft?.phase === "ask_quote") {
+    let want = isWantQuote(goal);
+    let skip = isSkipQuote(goal);
+    if (!want && !skip) {
+      const c = await classifyConfirmIntent(goal, "ask_quote");
+      if (c === "yes") want = true;
+      else if (c === "no") skip = true;
+    }
+    if (want) {
       if (!draft.plan) {
         setPlanningDraft({
           ...draft,
@@ -242,13 +429,169 @@ export async function handleDishPlanningTurn(opts: {
         return {
           type: "ask_bahan",
           dish: draft.dish,
-          message: reaskBahanMessage(draft.dish),
+          message: reaskBahanMessage(draft.dish, lang),
         };
       }
-      const run = finalizeQuoteOrCookable(draft, goal);
+      return { type: "run", run: finalizeQuote(draft, goal) };
+    }
+    if (skip) {
+      setPlanningDraft({ ...draft, phase: "idle" });
+      return {
+        type: "idle",
+        dish: draft.dish,
+        message: idleMessage(draft.dish, lang),
+        plan: draft.plan,
+        missing: draft.missing,
+        userBahan: draft.userBahan,
+      };
+    }
+    return {
+      type: "ask_quote",
+      dish: draft.dish,
+      message: askQuoteMessage(draft.dish, draft.missing ?? [], lang),
+      plan: draft.plan!,
+      missing: draft.missing ?? [],
+      userBahan: draft.userBahan,
+    };
+  }
+
+  // --- idle: remember last dish/plan until next intent ---
+  if (draft?.phase === "idle") {
+    if (isWantQuote(goal)) {
+      if (!draft.plan || !(draft.missing && draft.missing.length > 0)) {
+        if (draft.plan) {
+          return { type: "run", run: saveCookableRun(draft, goal) };
+        }
+        return {
+          type: "idle",
+          dish: draft.dish,
+          message: idleNudge(draft.dish, lang),
+          plan: draft.plan,
+          missing: draft.missing,
+          userBahan: draft.userBahan,
+        };
+      }
+      return { type: "run", run: finalizeQuote(draft, goal) };
+    }
+    if (isStartPrep(goal)) {
+      if (!draft.plan) {
+        return {
+          type: "ask_bahan",
+          dish: draft.dish,
+          message: reaskBahanMessage(draft.dish, lang),
+        };
+      }
+      const run = saveCookableRun(draft, goal);
       return { type: "run", run };
     }
-    if (isNo(goal)) {
+    // New dish name → restart ask_bahan for that dish
+    if (ruleIntent === "known_dish" || looksLikeBareDish(goal)) {
+      const dish = extractDishName(goal);
+      const sameDish =
+        dish.toLowerCase() === draft.dish.toLowerCase() ||
+        goal.toLowerCase() === draft.dish.toLowerCase();
+      if (!sameDish) {
+        const inline = extractInlineBahan(goal);
+        if (inline && inline.length > 0) {
+          try {
+            const { plan, missing } = await planAndGap(dish, inline);
+            setPlanningDraft({
+              cookerAddress: address,
+              dish,
+              phase: "confirm_gap",
+              userBahan: inline,
+              plan,
+              missing,
+              updatedAt: new Date().toISOString(),
+            });
+            return {
+              type: "confirm_gap",
+              dish,
+              message: formatGapMessage(dish, inline, missing, lang),
+              plan,
+              missing,
+              userBahan: inline,
+            };
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return {
+              type: "run",
+              run: saveRun({
+                id: newId("run"),
+                goal,
+                pantry: inline,
+                steps: [
+                  {
+                    tool: "plan_recipe",
+                    error: message,
+                    at: new Date().toISOString(),
+                  },
+                ],
+                intent: "known_dish",
+                status: "failed",
+                selectedDish: dish,
+                createdAt: new Date().toISOString(),
+              }),
+            };
+          }
+        }
+        setPlanningDraft({
+          cookerAddress: address,
+          dish,
+          phase: "await_bahan",
+          userBahan: [],
+          updatedAt: new Date().toISOString(),
+        });
+        return {
+          type: "ask_bahan",
+          dish,
+          message: askBahanMessage(dish, lang),
+        };
+      }
+    }
+    return {
+      type: "idle",
+      dish: draft.dish,
+      message: idleNudge(draft.dish, lang),
+      plan: draft.plan,
+      missing: draft.missing,
+      userBahan: draft.userBahan,
+    };
+  }
+
+  // --- Continue confirm_gap ---
+  if (draft?.phase === "confirm_gap") {
+    const confirm = await classifyConfirmIntent(goal, "confirm_gap");
+    if (confirm === "yes") {
+      if (!draft.plan) {
+        setPlanningDraft({
+          ...draft,
+          phase: "await_bahan",
+          plan: undefined,
+          missing: undefined,
+          userBahan: [],
+        });
+        return {
+          type: "ask_bahan",
+          dish: draft.dish,
+          message: reaskBahanMessage(draft.dish, lang),
+        };
+      }
+      const missing = draft.missing ?? [];
+      if (missing.length === 0) {
+        return { type: "run", run: saveCookableRun(draft, goal) };
+      }
+      setPlanningDraft({ ...draft, phase: "ask_quote" });
+      return {
+        type: "ask_quote",
+        dish: draft.dish,
+        message: askQuoteMessage(draft.dish, missing, lang),
+        plan: draft.plan,
+        missing,
+        userBahan: draft.userBahan,
+      };
+    }
+    if (confirm === "no") {
       setPlanningDraft({
         ...draft,
         phase: "await_bahan",
@@ -259,14 +602,17 @@ export async function handleDishPlanningTurn(opts: {
       return {
         type: "ask_bahan",
         dish: draft.dish,
-        message: reaskBahanMessage(draft.dish),
+        message: reaskBahanMessage(draft.dish, lang),
       };
     }
-    // Unclear — stay in confirm
     return {
       type: "confirm_gap",
       dish: draft.dish,
-      message: `Apakah daftar bahan / kekurangan untuk **${draft.dish}** sudah benar? Ketik **ya** atau **tidak**.`,
+      message: pickCopy(
+        lang,
+        `Apakah daftar bahan / kekurangan untuk **${draft.dish}** sudah benar? Bilang **ya** atau **tidak**.`,
+        `Is the ingredient / missing list for **${draft.dish}** correct? Say **yes** or **no**.`,
+      ),
       plan: draft.plan!,
       missing: draft.missing ?? [],
       userBahan: draft.userBahan,
@@ -280,7 +626,7 @@ export async function handleDishPlanningTurn(opts: {
       return {
         type: "ask_bahan",
         dish: draft.dish,
-        message: askBahanMessage(draft.dish),
+        message: askBahanMessage(draft.dish, lang),
       };
     }
     try {
@@ -295,16 +641,15 @@ export async function handleDishPlanningTurn(opts: {
       return {
         type: "confirm_gap",
         dish: draft.dish,
-        message: formatGapMessage(draft.dish, bahan, missing),
+        message: formatGapMessage(draft.dish, bahan, missing, lang),
         plan,
         missing,
         userBahan: bahan,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const id = newId("run");
       const run = saveRun({
-        id,
+        id: newId("run"),
         goal,
         pantry: bahan,
         steps: [
@@ -342,7 +687,7 @@ export async function handleDishPlanningTurn(opts: {
         return {
           type: "confirm_gap",
           dish,
-          message: formatGapMessage(dish, inline, missing),
+          message: formatGapMessage(dish, inline, missing, lang),
           plan,
           missing,
           userBahan: inline,
@@ -379,7 +724,7 @@ export async function handleDishPlanningTurn(opts: {
     return {
       type: "ask_bahan",
       dish,
-      message: askBahanMessage(dish),
+      message: askBahanMessage(dish, lang),
     };
   }
 

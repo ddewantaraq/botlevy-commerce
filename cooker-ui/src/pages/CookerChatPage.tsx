@@ -22,6 +22,7 @@ import {
   siweLogout,
   speakText,
   stopSpeaking,
+  transcriptFromRecognitionResults,
 } from "@botlevy-commerce/shared";
 import { MicIcon } from "../components/MicIcon";
 
@@ -74,6 +75,32 @@ function nid() {
   return `m_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function detectUiLang(text: string): "id" | "en" {
+  const t = text.trim();
+  const id =
+    (t.match(
+      /\b(aku|saya|punya|cuma|enak|masak|bahan|mau|tidak|nggak|iya|ya|menu|resep)\b/gi,
+    ) || []).length;
+  const en =
+    (t.match(
+      /\b(i\s+have|only|what|cook|recipe|ingredients|yes|no|want|quote|dish)\b/gi,
+    ) || []).length;
+  return en > id ? "en" : "id";
+}
+
+function plainForSpeech(text: string): string {
+  return text
+    .replace(/\*\*/g, "")
+    .replace(/[#>`]/g, "")
+    .replace(/\n+/g, ". ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function ttsLangFor(lang: "id" | "en"): string {
+  return lang === "en" ? "en-US" : "id-ID";
+}
+
 export function CookerChatPage() {
   const { address, isConnected, chainId } = useAccount();
   const { connect, connectors } = useConnect();
@@ -97,6 +124,7 @@ export function CookerChatPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [listening, setListening] = useState(false);
+  const [replyLang, setReplyLang] = useState<"id" | "en">("id");
   const [session, setSession] = useState<CookingSession | null>(null);
   const [confirmingPay, setConfirmingPay] = useState(false);
 
@@ -180,7 +208,19 @@ export function CookerChatPage() {
     ]);
   }
 
+  function speakAgent(text: string, lang: "id" | "en" = replyLang) {
+    const plain = plainForSpeech(text);
+    if (plain) speakText(plain, ttsLangFor(lang));
+  }
+
+  function pushAgent(msg: Omit<ChatMessage, "id" | "at" | "role">) {
+    push({ ...msg, role: "agent" });
+    speakAgent(msg.text);
+  }
+
   async function runPlanning(goal: string, selectedDish?: string) {
+    const lang = detectUiLang(goal);
+    setReplyLang(lang);
     const res = await fetch(`${API_URL}/agent/runs`, {
       method: "POST",
       credentials: "include",
@@ -193,50 +233,93 @@ export function CookerChatPage() {
     });
     const data = await res.json();
     if (!res.ok || !data.ok) {
-      push({
-        role: "agent",
-        text: data.message || "Agent run failed",
+      pushAgent({
+        text: data.message || (lang === "en" ? "Agent run failed" : "Agent gagal"),
         kind: "text",
         steps: data.steps,
       });
       return;
     }
 
-    if (data.status === "clarify") {
-      push({
-        role: "agent",
-        text: data.message || "Mau mulai rencana masak baru?",
-        kind: "text",
+    if (data.status === "prep" && data.session) {
+      setSession(data.session);
+      pushAgent({
+        text: data.reply || data.message || "Prep",
+        kind: "prep",
+        sessionId: data.session.id,
+        prepChecks: data.session.prepChecks,
+        plan: data.session.plan,
+        runId: data.runId,
       });
       return;
     }
 
-    if (data.status === "ask_bahan" || data.status === "confirm_gap") {
-      push({
-        role: "agent",
-        text: data.message || (data.status === "ask_bahan"
-          ? "Sebutkan bahan yang sudah kamu punya."
-          : "Apakah sudah benar?"),
-        kind: "plan_result",
+    if (
+      data.status === "clarify" ||
+      data.status === "ask_reset" ||
+      data.status === "ask_bahan" ||
+      data.status === "confirm_gap" ||
+      data.status === "ask_quote" ||
+      data.status === "idle"
+    ) {
+      pushAgent({
+        text:
+          data.message ||
+          (data.status === "ask_bahan"
+            ? lang === "en"
+              ? "List the ingredients you already have."
+              : "Sebutkan bahan yang sudah kamu punya."
+            : data.status === "ask_quote"
+              ? lang === "en"
+                ? "Want a warung quote?"
+                : "Mau quote dari warung?"
+              : data.status === "idle"
+                ? lang === "en"
+                  ? "Ready — say start cooking or want quote."
+                  : "Siap — bilang mulai masak atau mau quote."
+                : data.status === "confirm_gap"
+                  ? lang === "en"
+                    ? "Is that correct?"
+                    : "Apakah sudah benar?"
+                  : data.status === "ask_reset"
+                    ? lang === "en"
+                      ? "Start a new chat? Say yes or no."
+                      : "Yakin mulai chat baru? Bilang ya atau tidak."
+                    : lang === "en"
+                      ? "Want to start a new cooking plan?"
+                      : "Mau mulai rencana masak baru?"),
+        kind:
+          data.status === "clarify" || data.status === "ask_reset"
+            ? "text"
+            : "plan_result",
         status: data.status,
         plan: data.plan,
+        runId: data.runId,
       });
       return;
     }
 
     let text = "";
     if (data.status === "suggestions") {
-      text = "Beberapa ide menu dari bahanmu — pilih salah satu:";
+      text =
+        lang === "en"
+          ? "Some dish ideas from your ingredients — pick one:"
+          : "Beberapa ide menu dari bahanmu — pilih salah satu:";
     } else if (data.status === "cookable") {
-      text = `Resep **${data.plan?.dish}** siap. Semua bahan sudah ada — mulai pre-cook?`;
+      text =
+        lang === "en"
+          ? `Recipe **${data.plan?.dish}** is ready. You have everything — start pre-cook?`
+          : `Resep **${data.plan?.dish}** siap. Semua bahan sudah ada — mulai pre-cook?`;
     } else if (data.status === "quoted") {
-      text = `Resep **${data.plan?.dish}**. Ada bahan kurang — quote warung siap dibayar.`;
+      text =
+        lang === "en"
+          ? `Recipe **${data.plan?.dish}**. Missing items — warung quote ready to pay.`
+          : `Resep **${data.plan?.dish}**. Ada bahan kurang — quote warung siap dibayar.`;
     } else {
       text = data.message || `Status: ${data.status}`;
     }
 
-    push({
-      role: "agent",
+    pushAgent({
       text,
       kind: "plan_result",
       status: data.status,
@@ -259,7 +342,7 @@ export function CookerChatPage() {
     });
     const data = await res.json();
     if (!res.ok || !data.ok) {
-      push({ role: "agent", text: data.message || "Session message failed", kind: "text" });
+      pushAgent({ text: data.message || "Session message failed", kind: "text" });
       return;
     }
     setSession(data.session);
@@ -278,7 +361,7 @@ export function CookerChatPage() {
       prepChecks: data.session.prepChecks,
       plan: data.session.plan,
     });
-    if (data.speak) speakText(data.speak);
+    speakAgent(data.speak || data.reply);
     if (data.handoff || data.session.status === "abandoned" || data.session.status === "done") {
       setSession(null);
     }
@@ -293,6 +376,7 @@ export function CookerChatPage() {
     }
     setDraft("");
     setError("");
+    setReplyLang(detectUiLang(text));
     push({ role: "user", text, kind: "text" });
     setBusy(true);
     try {
@@ -304,7 +388,20 @@ export function CookerChatPage() {
       if (active) {
         await sendSessionMessage(text);
       } else {
-        await runPlanning(text);
+        // UI fallback: match last suggestions like a click
+        const lastSuggest = [...messages]
+          .reverse()
+          .find((m) => m.role === "agent" && (m.suggestions?.length ?? 0) > 0);
+        const matched = lastSuggest?.suggestions?.find((s) => {
+          const g = text.toLowerCase();
+          const d = s.dish.toLowerCase();
+          return g === d || g.includes(d) || d.includes(g);
+        });
+        if (matched) {
+          await runPlanning(text, matched.dish);
+        } else {
+          await runPlanning(text);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -339,8 +436,7 @@ export function CookerChatPage() {
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.message || "Cannot start prep");
       setSession(data.session);
-      push({
-        role: "agent",
+      pushAgent({
         text: data.reply,
         kind: "prep",
         sessionId: data.session.id,
@@ -393,9 +489,11 @@ export function CookerChatPage() {
       });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.message || "Order failed");
-      push({
-        role: "agent",
-        text: `Pembayaran OK. Order **${data.order.id}**. Siap pre-cook?`,
+      pushAgent({
+        text:
+          replyLang === "en"
+            ? `Payment OK. Order **${data.order.id}**. Ready for pre-cook?`
+            : `Pembayaran OK. Order **${data.order.id}**. Siap pre-cook?`,
         kind: "text",
       });
       if (runId) await startPrep(runId);
@@ -419,8 +517,7 @@ export function CookerChatPage() {
       });
       const data = await res.json();
       if (data.ok) {
-        push({
-          role: "agent",
+        pushAgent({
           text: data.reply || `Menu **${plan.dish}** tersimpan.`,
           kind: "text",
         });
@@ -440,9 +537,11 @@ export function CookerChatPage() {
     });
     const data = await res.json();
     if (data.ok) {
-      push({
-        role: "agent",
-        text: `Menu **${plan.dish}** tersimpan.`,
+      pushAgent({
+        text:
+          replyLang === "en"
+            ? `Menu **${plan.dish}** saved.`
+            : `Menu **${plan.dish}** tersimpan.`,
         kind: "text",
       });
     }
@@ -457,10 +556,8 @@ export function CookerChatPage() {
     setListening(true);
     setError("");
     rec.onresult = (ev) => {
-      const transcript = ev.results[0]?.[0]?.transcript?.trim();
-      if (transcript) {
-        // Soft client normalize; server normalizeUtterance is source of truth
-        const soft = transcript.replace(/\s+/g, " ").trim();
+      const soft = transcriptFromRecognitionResults(ev.results);
+      if (soft) {
         void handleSend(soft);
       }
     };
@@ -567,22 +664,29 @@ export function CookerChatPage() {
 
                 {m.kind === "prep" && m.prepChecks ? (
                   <ul className="mt-3 space-y-2">
-                    {Object.entries(m.prepChecks).map(([tag, ok]) => (
-                      <li key={tag}>
-                        <label className="flex cursor-pointer items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={session?.prepChecks?.[tag] ?? ok}
-                            onChange={(e) =>
-                              void togglePrepTag(tag, e.target.checked)
-                            }
-                          />
-                          <span className="font-mono text-xs">{tag}</span>
-                        </label>
-                      </li>
-                    ))}
+                    {Object.entries(m.prepChecks).map(([tag, ok]) => {
+                      const label =
+                        (m.plan ?? session?.plan)?.ingredients.find(
+                          (i) => i.tag.toLowerCase() === tag.toLowerCase(),
+                        )?.name?.trim() || tag.replace(/_/g, " ");
+                      return (
+                        <li key={tag}>
+                          <label className="flex cursor-pointer items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={session?.prepChecks?.[tag] ?? ok}
+                              onChange={(e) =>
+                                void togglePrepTag(tag, e.target.checked)
+                              }
+                            />
+                            <span>{label}</span>
+                          </label>
+                        </li>
+                      );
+                    })}
                     <li className="pt-1 text-xs text-[var(--body)]">
-                      Ketik <strong>semua siap</strong> lalu <strong>mulai masak</strong>
+                      Kalau semua bahan sudah siap, bilang atau ketik{" "}
+                      <strong>mulai masak</strong>
                     </li>
                   </ul>
                 ) : null}

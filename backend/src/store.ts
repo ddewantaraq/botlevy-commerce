@@ -168,7 +168,11 @@ export type CookerProfile = {
   menus: SavedMenu[];
 };
 
-export type PlanningDraftPhase = "await_bahan" | "confirm_gap";
+export type PlanningDraftPhase =
+  | "await_bahan"
+  | "confirm_gap"
+  | "ask_quote"
+  | "idle";
 
 export type PlanningDraft = {
   cookerAddress: string;
@@ -192,6 +196,32 @@ type Db = {
   cookerProfiles: CookerProfile[];
   cookingSessions: CookingSession[];
   planningDrafts: PlanningDraft[];
+  /** Last menu suggestions per cooker (for chat/speak pick). */
+  lastSuggestions: Array<{
+    cookerAddress: string;
+    dishes: string[];
+    updatedAt: string;
+  }>;
+  /** Pantry tags from last pantry_first / suggestions run. */
+  lastPlanningPantry: Array<{
+    cookerAddress: string;
+    tags: string[];
+    updatedAt: string;
+  }>;
+  /** Awaiting “yakin?” after batal / menu baru. */
+  pendingResets: Array<{ cookerAddress: string; updatedAt: string }>;
+  /** Last cookable/quoted run ready for pre-cook. */
+  lastReadyRuns: Array<{
+    cookerAddress: string;
+    runId: string;
+    updatedAt: string;
+  }>;
+  /** Awaiting mulai/ya to start prep after cookable offer. */
+  pendingStartPreps: Array<{
+    cookerAddress: string;
+    runId: string;
+    updatedAt: string;
+  }>;
   sessions: Record<string, Session>;
   nonces: Record<string, Nonce>;
 };
@@ -206,6 +236,11 @@ function emptyDb(): Db {
     cookerProfiles: [],
     cookingSessions: [],
     planningDrafts: [],
+    lastSuggestions: [],
+    lastPlanningPantry: [],
+    pendingResets: [],
+    lastReadyRuns: [],
+    pendingStartPreps: [],
     sessions: {},
     nonces: {},
   };
@@ -226,6 +261,11 @@ function load(): Db {
       cookerProfiles: parsed.cookerProfiles ?? [],
       cookingSessions: parsed.cookingSessions ?? [],
       planningDrafts: parsed.planningDrafts ?? [],
+      lastSuggestions: parsed.lastSuggestions ?? [],
+      lastPlanningPantry: parsed.lastPlanningPantry ?? [],
+      pendingResets: parsed.pendingResets ?? [],
+      lastReadyRuns: parsed.lastReadyRuns ?? [],
+      pendingStartPreps: parsed.pendingStartPreps ?? [],
       merchants: parsed.merchants ?? [],
       products: parsed.products ?? [],
       orders: parsed.orders ?? [],
@@ -251,6 +291,11 @@ function save(db: Db) {
         cookerProfiles: db.cookerProfiles,
         cookingSessions: db.cookingSessions.slice(-100),
         planningDrafts: db.planningDrafts.slice(-50),
+        lastSuggestions: db.lastSuggestions.slice(-50),
+        lastPlanningPantry: db.lastPlanningPantry.slice(-50),
+        pendingResets: db.pendingResets.slice(-50),
+        lastReadyRuns: db.lastReadyRuns.slice(-50),
+        pendingStartPreps: db.pendingStartPreps.slice(-50),
       },
       null,
       2,
@@ -539,4 +584,177 @@ export function clearPlanningDraft(address: string): void {
   const before = db.planningDrafts.length;
   db.planningDrafts = db.planningDrafts.filter((d) => d.cookerAddress !== a);
   if (db.planningDrafts.length !== before) persist();
+}
+
+export function setLastSuggestions(address: string, dishes: string[]): void {
+  const a = address.toLowerCase();
+  const entry = {
+    cookerAddress: a,
+    dishes: dishes.map((d) => d.trim()).filter(Boolean),
+    updatedAt: new Date().toISOString(),
+  };
+  const idx = db.lastSuggestions.findIndex((s) => s.cookerAddress === a);
+  if (idx >= 0) db.lastSuggestions[idx] = entry;
+  else db.lastSuggestions.unshift(entry);
+  persist();
+}
+
+export function getLastSuggestions(address: string): string[] {
+  const a = address.toLowerCase();
+  return db.lastSuggestions.find((s) => s.cookerAddress === a)?.dishes ?? [];
+}
+
+export function clearLastSuggestions(address: string): void {
+  const a = address.toLowerCase();
+  const before = db.lastSuggestions.length;
+  db.lastSuggestions = db.lastSuggestions.filter((s) => s.cookerAddress !== a);
+  if (db.lastSuggestions.length !== before) persist();
+}
+
+export function setLastPlanningPantry(address: string, tags: string[]): void {
+  const a = address.toLowerCase();
+  const entry = {
+    cookerAddress: a,
+    tags: [
+      ...new Set(
+        tags
+          .map((t) => t.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""))
+          .filter(Boolean),
+      ),
+    ],
+    updatedAt: new Date().toISOString(),
+  };
+  const idx = db.lastPlanningPantry.findIndex((s) => s.cookerAddress === a);
+  if (idx >= 0) db.lastPlanningPantry[idx] = entry;
+  else db.lastPlanningPantry.unshift(entry);
+  persist();
+}
+
+export function getLastPlanningPantry(address: string): string[] {
+  const a = address.toLowerCase();
+  return db.lastPlanningPantry.find((s) => s.cookerAddress === a)?.tags ?? [];
+}
+
+export function clearLastPlanningPantry(address: string): void {
+  const a = address.toLowerCase();
+  const before = db.lastPlanningPantry.length;
+  db.lastPlanningPantry = db.lastPlanningPantry.filter(
+    (s) => s.cookerAddress !== a,
+  );
+  if (db.lastPlanningPantry.length !== before) persist();
+}
+
+export function setPendingReset(address: string): void {
+  const a = address.toLowerCase();
+  const entry = { cookerAddress: a, updatedAt: new Date().toISOString() };
+  const idx = db.pendingResets.findIndex((s) => s.cookerAddress === a);
+  if (idx >= 0) db.pendingResets[idx] = entry;
+  else db.pendingResets.unshift(entry);
+  persist();
+}
+
+export function hasPendingReset(address: string): boolean {
+  const a = address.toLowerCase();
+  return db.pendingResets.some((s) => s.cookerAddress === a);
+}
+
+export function clearPendingReset(address: string): void {
+  const a = address.toLowerCase();
+  const before = db.pendingResets.length;
+  db.pendingResets = db.pendingResets.filter((s) => s.cookerAddress !== a);
+  if (db.pendingResets.length !== before) persist();
+}
+
+export function setLastReadyRun(address: string, runId: string): void {
+  const a = address.toLowerCase();
+  const entry = {
+    cookerAddress: a,
+    runId,
+    updatedAt: new Date().toISOString(),
+  };
+  const idx = db.lastReadyRuns.findIndex((s) => s.cookerAddress === a);
+  if (idx >= 0) db.lastReadyRuns[idx] = entry;
+  else db.lastReadyRuns.unshift(entry);
+  persist();
+}
+
+export function getLastReadyRunId(address: string): string | null {
+  const a = address.toLowerCase();
+  return db.lastReadyRuns.find((s) => s.cookerAddress === a)?.runId ?? null;
+}
+
+export function clearLastReadyRun(address: string): void {
+  const a = address.toLowerCase();
+  const before = db.lastReadyRuns.length;
+  db.lastReadyRuns = db.lastReadyRuns.filter((s) => s.cookerAddress !== a);
+  if (db.lastReadyRuns.length !== before) persist();
+}
+
+export function setPendingStartPrep(address: string, runId: string): void {
+  const a = address.toLowerCase();
+  const entry = {
+    cookerAddress: a,
+    runId,
+    updatedAt: new Date().toISOString(),
+  };
+  const idx = db.pendingStartPreps.findIndex((s) => s.cookerAddress === a);
+  if (idx >= 0) db.pendingStartPreps[idx] = entry;
+  else db.pendingStartPreps.unshift(entry);
+  persist();
+}
+
+export function getPendingStartPrepRunId(address: string): string | null {
+  const a = address.toLowerCase();
+  return db.pendingStartPreps.find((s) => s.cookerAddress === a)?.runId ?? null;
+}
+
+export function hasPendingStartPrep(address: string): boolean {
+  return getPendingStartPrepRunId(address) !== null;
+}
+
+export function clearPendingStartPrep(address: string): void {
+  const a = address.toLowerCase();
+  const before = db.pendingStartPreps.length;
+  db.pendingStartPreps = db.pendingStartPreps.filter(
+    (s) => s.cookerAddress !== a,
+  );
+  if (db.pendingStartPreps.length !== before) persist();
+}
+
+/** Mark a cookable/quoted run as ready for spoken mulai / ya. */
+export function markReadyForPrep(address: string, runId: string): void {
+  setLastReadyRun(address, runId);
+  setPendingStartPrep(address, runId);
+}
+
+/** Clear all planning memory for a cooker (new chat). */
+export function clearPlanningMemory(address: string): void {
+  clearPlanningDraft(address);
+  clearLastSuggestions(address);
+  clearLastPlanningPantry(address);
+  clearPendingReset(address);
+  clearLastReadyRun(address);
+  clearPendingStartPrep(address);
+}
+
+/** Fuzzy match user text to a previously suggested dish name. */
+export function matchSuggestedDish(
+  address: string,
+  goal: string,
+): string | null {
+  const dishes = getLastSuggestions(address);
+  if (!dishes.length) return null;
+  const g = goal
+    .trim()
+    .toLowerCase()
+    .replace(/^(pilih|pilihkan|saya\s+mau|mau|masak|cook)\s*:?\s*/i, "")
+    .replace(/[.…,!?]+$/g, "")
+    .trim();
+  if (!g) return null;
+  for (const dish of dishes) {
+    const d = dish.toLowerCase().trim();
+    if (!d) continue;
+    if (g === d || g.includes(d) || d.includes(g)) return dish;
+  }
+  return null;
 }

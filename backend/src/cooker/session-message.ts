@@ -1,6 +1,11 @@
 import type { CookingSession } from "../store.js";
 import { saveCookerMenu, saveCookingSession } from "../store.js";
 import {
+  classifyConfirmIntent,
+  isAffirmative,
+  isNegative,
+} from "./confirm-intent.js";
+import {
   classifyCookIntent,
   type CookIntent,
   type CookPhase,
@@ -98,13 +103,14 @@ function isStop(t: string) {
 }
 
 function isYes(t: string) {
-  return /^(ya|yes|y|iya|betul|benar|ok|oke|ganti|batal)$/.test(t);
+  return isAffirmative(t) || /^(ganti|batal)$/.test(t);
 }
 
 function isNo(t: string) {
   return (
-    /^(tidak|no|nggak|gak|lanjut aja|tetap|jangan)$/.test(t) ||
-    /\b(tidak|lanjut aja|jangan)\b/.test(t)
+    isNegative(t) ||
+    /^(lanjut aja|tetap|jangan)$/.test(t) ||
+    /\b(lanjut aja|jangan)\b/.test(t)
   );
 }
 
@@ -150,11 +156,23 @@ function allPrepReady(session: CookingSession) {
   return Object.values(session.prepChecks).every(Boolean);
 }
 
+function humanizeTag(tag: string): string {
+  return tag.replace(/_/g, " ").trim();
+}
+
+function ingredientLabel(session: CookingSession, tag: string): string {
+  const ing = session.plan.ingredients.find(
+    (i) => i.tag.toLowerCase() === tag.toLowerCase(),
+  );
+  const name = ing?.name?.trim();
+  return name || humanizeTag(tag);
+}
+
 function prepSummary(session: CookingSession) {
   const lines = Object.entries(session.prepChecks).map(
-    ([tag, ok]) => `${ok ? "✓" : "○"} ${tag}`,
+    ([tag, ok]) => `${ok ? "✓" : "○"} ${ingredientLabel(session, tag)}`,
   );
-  return `Persiapan bahan untuk **${session.dish}**:\n${lines.join("\n")}\n\nCentang di chat (“semua siap”) atau bilang bahan yang sudah siap, lalu “mulai masak”.`;
+  return `Persiapan bahan untuk **${session.dish}**:\n${lines.join("\n")}\n\nKalau semua bahan sudah siap, bilang atau ketik **mulai masak**.`;
 }
 
 function applyStart(session: CookingSession): SessionMessageResult {
@@ -335,7 +353,14 @@ export async function handleSessionMessage(
 
   // Pending confirm for abandon/replan / stop / off_topic
   if (session.pendingConfirm === "abandon_replan") {
-    if (isYes(text) || isEscape(text) || isStop(text)) {
+    let yes = isYes(text) || isEscape(text) || isStop(text);
+    let no = isNo(text) || isNext(text) || isSave(text);
+    if (!yes && !no) {
+      const c = await classifyConfirmIntent(text, "abandon_replan");
+      if (c === "yes") yes = true;
+      else if (c === "no") no = true;
+    }
+    if (yes) {
       session.status = "abandoned";
       session.pendingConfirm = null;
       touch(session);
@@ -345,7 +370,7 @@ export async function handleSessionMessage(
         handoff: { goal: "" },
       };
     }
-    if (isNo(text) || isNext(text) || isSave(text)) {
+    if (no) {
       const wasSave = isSave(text);
       session.pendingConfirm = null;
       touch(session);
@@ -362,7 +387,7 @@ export async function handleSessionMessage(
     }
     return {
       session,
-      reply: `Kamu mau akhiri / ganti topik dari **${session.dish}**? Ketik **ya** atau **tidak**.`,
+      reply: `Kamu mau akhiri / ganti topik dari **${session.dish}**? Bilang atau ketik **ya** atau **tidak**.`,
     };
   }
 

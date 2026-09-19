@@ -2,27 +2,17 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireCooker, type AuthedRequest } from "../middleware/auth.js";
 import {
-  abandonActiveSessions,
-  clearPlanningDraft,
   deleteCookerMenu,
   getActiveCookingSession,
-  getCookerMenu,
   getCookerPantry,
   getCookingSession,
-  getRun,
   listCookerMenus,
-  newId,
   saveCookerMenu,
   saveCookingSession,
   setCookerPantry,
-  type CookingSession,
 } from "../store.js";
-import {
-  applySaveMenu,
-  buildPrepChecks,
-  formatPrepIntro,
-  handleSessionMessage,
-} from "../cooker/session-message.js";
+import { handleSessionMessage, applySaveMenu } from "../cooker/session-message.js";
+import { startPrepSession } from "../cooker/start-prep.js";
 
 export const cookerRouter = Router();
 
@@ -109,68 +99,21 @@ cookerRouter.post("/sessions", (req: AuthedRequest, res) => {
     return;
   }
 
-  const address = req.sessionAddress!;
-  let dish = "";
-  let plan: CookingSession["plan"] | null = null;
-  let runId: string | undefined;
-  let menuId: string | undefined;
-
-  if (parsed.data.runId) {
-    const run = getRun(parsed.data.runId);
-    if (!run?.plan) {
-      res.status(400).json({ ok: false, message: "Run has no recipe plan" });
-      return;
-    }
-    if (run.status !== "cookable" && run.status !== "quoted") {
-      res.status(400).json({
-        ok: false,
-        message: "Start prep from a cookable or quoted run",
-      });
-      return;
-    }
-    plan = run.plan;
-    dish = run.plan.dish;
-    runId = run.id;
-  } else if (parsed.data.menuId) {
-    const menu = getCookerMenu(address, parsed.data.menuId);
-    if (!menu) {
-      res.status(404).json({ ok: false, message: "Menu not found" });
-      return;
-    }
-    plan = menu.plan;
-    dish = menu.dish;
-    menuId = menu.id;
-  }
-
-  if (!plan) {
-    res.status(400).json({ ok: false, message: "No plan" });
-    return;
-  }
-
-  abandonActiveSessions(address);
-  clearPlanningDraft(address);
-  const session: CookingSession = {
-    id: newId("cook"),
-    cookerAddress: address.toLowerCase(),
-    status: "prep",
-    runId,
-    menuId,
-    dish,
-    plan,
-    prepChecks: buildPrepChecks(plan.ingredients),
-    stepIndex: 0,
-    pendingConfirm: null,
+  const result = startPrepSession({
+    address: req.sessionAddress!,
+    runId: parsed.data.runId,
+    menuId: parsed.data.menuId,
     quoteId: parsed.data.quoteId,
     orderId: parsed.data.orderId,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  saveCookingSession(session);
-
+  });
+  if (!result.ok) {
+    res.status(result.status).json({ ok: false, message: result.message });
+    return;
+  }
   res.json({
     ok: true,
-    session,
-    reply: formatPrepIntro(session),
+    session: result.session,
+    reply: result.reply,
   });
 });
 

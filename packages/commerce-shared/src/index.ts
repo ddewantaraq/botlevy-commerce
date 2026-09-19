@@ -6,4 +6,6 @@ export {
   stopSpeaking,
   isSpeechRecognitionSupported,
   createSpeechRecognition,
+  normalizeSpeechTranscript,
+  transcriptFromRecognitionResults,
 } from "./speech";
