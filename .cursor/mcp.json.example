@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "bnbchain-mcp": {
+      "command": "npx",
+      "args": ["-y", "@bnb-chain/mcp@latest"],
+      "env": {
+        "PRIVATE_KEY": "",
+        "BNBCHAIN_MCP_SKIP_TRANSFER_CONFIRMATION": "false"
+      }
+    }
+  }
+}

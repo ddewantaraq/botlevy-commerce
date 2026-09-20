@@ -30,6 +30,8 @@ Health check: `curl http://localhost:4100/health`
 - Week 1 pay loop: [`INSTRUCTIONS.md`](./INSTRUCTIONS.md)
 - Orchestration API paths: [`INSTRUCTIONS-ORCHESTRATION.md`](./INSTRUCTIONS-ORCHESTRATION.md)
 - Wife-story chat / pre-cook / cook-time: [`INSTRUCTIONS-COOKING.md`](./INSTRUCTIONS-COOKING.md)
+- Week 3 plan (BNB MCP, ERC-8004, x402, deploy): [`WEEK3.md`](./WEEK3.md)
+- Hosted tryout: [`TRYOUT.md`](./TRYOUT.md) · Deploy checklist: [`DEPLOY.md`](./DEPLOY.md)
 
 ## Environment
 
