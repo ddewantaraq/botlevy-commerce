@@ -10,6 +10,7 @@ import {
   type CookIntent,
   type CookPhase,
 } from "./cook-intent.js";
+import { formatIngredientLabel } from "../units.js";
 
 export type SessionMessageResult = {
   session: CookingSession;
@@ -166,16 +167,16 @@ function allPrepReady(session: CookingSession) {
   return Object.values(session.prepChecks).every(Boolean);
 }
 
-function humanizeTag(tag: string): string {
-  return tag.replace(/_/g, " ").trim();
-}
-
 function ingredientLabel(session: CookingSession, tag: string): string {
   const ing = session.plan.ingredients.find(
     (i) => i.tag.toLowerCase() === tag.toLowerCase(),
   );
-  const name = ing?.name?.trim();
-  return name || humanizeTag(tag);
+  return formatIngredientLabel({
+    name: ing?.name,
+    tag,
+    qty: ing?.qty,
+    unit: ing?.unit,
+  });
 }
 
 function isPrepWalkChoice(t: string) {

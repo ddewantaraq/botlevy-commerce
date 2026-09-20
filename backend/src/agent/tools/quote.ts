@@ -2,6 +2,7 @@ import { env } from "../../config.js";
 import type { OrderLine, Quote } from "../../store.js";
 import { getMerchant, isRealPayTo, newId, saveQuote } from "../../store.js";
 import type { MatchResult, Substitution } from "../types.js";
+import { normalizeUnit } from "../../units.js";
 
 function ethersZero() {
   return "0x0000000000000000000000000000000000000000";
@@ -30,6 +31,9 @@ export function toolCreateQuote(opts: {
     qty: m.qty,
     unitPrice: m.unitPrice,
     tag: m.ingredient.tag,
+    unit: m.unit,
+    needQty: m.ingredient.qty,
+    needUnit: normalizeUnit(m.ingredient.unit),
   }));
 
   const total = lines.reduce((sum, l) => sum + l.unitPrice * l.qty, 0);

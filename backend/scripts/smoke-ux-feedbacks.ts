@@ -51,6 +51,8 @@ async function main() {
 
   assert(detectReplyLang("I want to cook chicken") === "en", "en detect");
   assert(detectReplyLang("aku mau masak ayam") === "id", "id detect");
+  assert(detectReplyLang("quote") === "id", "bare quote stays id");
+  assert(detectReplyLang("cek harga") === "id", "cek harga is id");
 
   const addr = "0xsmoke_ux_feedbacks";
   clearPlanningDraft(addr);

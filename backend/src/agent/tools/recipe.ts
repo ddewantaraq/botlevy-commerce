@@ -3,6 +3,7 @@ import { hasOllamaKey, ollamaChat } from "../llm/client.js";
 import { extractJson } from "../llm/json.js";
 import type { Plan } from "../types.js";
 import { normalizeTag } from "./pantry.js";
+import { normalizeUnit } from "../../units.js";
 
 export const RECIPE_TRY_AGAIN =
   "Maaf, gagal membuat resep. Coba chat atau bicara lagi.";
@@ -29,13 +30,15 @@ const SYSTEM_PROMPT = `You are a cooking commerce agent tool. Return ONLY a sing
 
 Rules:
 - Always include a non-empty "ingredients" array (never omit it). Use key name "ingredients" only (not "bahan").
-- Each ingredient needs snake_case tag, display name, numeric qty, and unit (e.g. pcs, g, tbsp).
+- Each ingredient needs snake_case tag, display name, numeric qty, and unit.
+- Prefer Indonesian measurable units when possible: kg, g, ml, L, sdm, sdt. Count units OK for whole items: biji, butir, siung, pcs.
+- Avoid English tbsp/tsp — use sdm/sdt. Avoid "gr" — use "g".
 - "steps" must be a non-empty string array of cooking steps.
 - If the user only names a dish (e.g. "soto ayam"), still invent a complete home recipe with ingredients + steps.
 - Prefer Indonesian home-cooking tags like chicken, shallot, kecap_manis, garlic, onion, cooking_oil, salt, beef, potato.
 
 Example:
-{"dish":"Soto Ayam","steps":["Rebus ayam","Tumis bumbu","Sajikan"],"ingredients":[{"tag":"chicken","name":"Ayam","qty":500,"unit":"g"},{"tag":"garlic","name":"Bawang putih","qty":3,"unit":"pcs"}]}`;
+{"dish":"Soto Ayam","steps":["Rebus ayam","Tumis bumbu","Sajikan"],"ingredients":[{"tag":"chicken","name":"Ayam","qty":500,"unit":"g"},{"tag":"garlic","name":"Bawang putih","qty":3,"unit":"siung"},{"tag":"salt","name":"Garam","qty":1,"unit":"sdt"}]}`;
 
 /** Coerce common LLM shapes into recipeSchema input. */
 export function normalizeRecipePayload(raw: unknown): unknown {
@@ -92,12 +95,13 @@ export function normalizeRecipePayload(raw: unknown): unknown {
         if (typeof qty !== "number" || !Number.isFinite(qty) || qty <= 0) {
           qty = 1;
         }
-        const unit =
+        const unitRaw =
           typeof r.unit === "string" && r.unit.trim()
             ? r.unit.trim()
             : typeof r.satuan === "string" && r.satuan.trim()
               ? r.satuan.trim()
               : "pcs";
+        const unit = normalizeUnit(unitRaw);
         if (!tag || !name) return null;
         return { tag, name, qty, unit };
       })

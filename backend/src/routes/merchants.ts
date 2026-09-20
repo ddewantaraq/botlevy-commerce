@@ -15,6 +15,7 @@ import {
   upsertProduct,
 } from "../store.js";
 import { suggestProductTags } from "../agent/subagents/catalog-assist.js";
+import { isMerchantUnit, MERCHANT_UNITS, normalizeUnit } from "../units.js";
 
 export const merchantsRouter = Router();
 
@@ -26,6 +27,11 @@ merchantsRouter.get("/", (_req, res) => {
       productCount: listProducts(m.id).length,
     })),
   });
+});
+
+/** Measurable units allowed on merchant products. */
+merchantsRouter.get("/units", (_req, res) => {
+  res.json({ ok: true, units: [...MERCHANT_UNITS] });
 });
 
 const profileSchema = z.object({
@@ -67,7 +73,12 @@ merchantsRouter.patch(
 const productSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
-  unit: z.string().min(1),
+  unit: z
+    .string()
+    .min(1)
+    .refine((u) => isMerchantUnit(u), {
+      message: `unit must be one of: ${MERCHANT_UNITS.join(", ")}`,
+    }),
   price: z.number().int().nonnegative(),
   stock: z.number().int().nonnegative(),
   tags: z.array(z.string()).min(1),
@@ -141,7 +152,7 @@ merchantsRouter.post(
       id: parsed.data.id ?? newId("prod"),
       merchantId: merchant.id,
       name: parsed.data.name,
-      unit: parsed.data.unit,
+      unit: normalizeUnit(parsed.data.unit),
       price: parsed.data.price,
       stock: parsed.data.stock,
       tags: parsed.data.tags.map((t) => t.toLowerCase()),

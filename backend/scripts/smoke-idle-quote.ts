@@ -31,6 +31,8 @@ async function main() {
   assert(isWantQuoteExplicit("quote dong"), "quote dong");
   assert(isWantQuoteExplicit("jadi mau quote"), "jadi mau quote");
   assert(isWantQuoteExplicit("want quote"), "want quote");
+  assert(isWantQuoteExplicit("cek harga"), "cek harga explicit");
+  assert(isWantQuoteExplicit("minta harga dong"), "minta harga dong");
   assert(!isWantQuoteExplicit("ya"), "bare ya is not explicit quote");
   assert(!isWantQuoteExplicit("ok"), "ok is not explicit quote");
   assert(isStartPrep("mulai"), "mulai is start prep");

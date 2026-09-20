@@ -7,6 +7,7 @@ import {
   listProducts,
 } from "../../store.js";
 import type { MatchResult, Substitution } from "../types.js";
+import { normalizeUnit, unitsCompatible } from "../../units.js";
 
 function coversTag(merchant: Merchant, tag: string) {
   const products = listProducts(merchant.id);
@@ -88,8 +89,13 @@ export function toolMatchCatalog(
       oos.push(ing);
       continue;
     }
-    const requested =
-      Number.isFinite(ing.qty) && ing.qty > 0 ? Math.ceil(ing.qty) : 1;
+    const productUnit = normalizeUnit(inStock.unit);
+    const recipeUnit = normalizeUnit(ing.unit);
+    let requested = 1;
+    if (unitsCompatible(recipeUnit, productUnit)) {
+      requested =
+        Number.isFinite(ing.qty) && ing.qty > 0 ? Math.ceil(ing.qty) : 1;
+    }
     const qty = Math.min(requested, inStock.stock);
     if (qty < 1) {
       oos.push(ing);
@@ -102,6 +108,7 @@ export function toolMatchCatalog(
       unitPrice: inStock.price,
       stock: inStock.stock,
       qty,
+      unit: productUnit,
     });
   }
 

@@ -51,6 +51,12 @@ export type OrderLine = {
   qty: number;
   unitPrice: number;
   tag: string;
+  /** Merchant product sell unit (kg, g, …). */
+  unit?: string;
+  /** Recipe need qty (e.g. 500). */
+  needQty?: number;
+  /** Recipe need unit (e.g. g). */
+  needUnit?: string;
 };
 
 export type Order = {

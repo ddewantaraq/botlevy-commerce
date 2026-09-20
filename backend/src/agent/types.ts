@@ -38,6 +38,8 @@ export type MatchResult = {
     unitPrice: number;
     stock: number;
     qty: number;
+    /** Merchant product unit. */
+    unit: string;
   }>;
   unmatched: Ingredient[];
   oos: Ingredient[];

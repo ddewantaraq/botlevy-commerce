@@ -11,6 +11,7 @@ import {
   API_URL,
   CHAIN_ID,
   formatMusdc,
+  MERCHANT_UNITS,
   parseMusdc,
   siweLogin,
   siweLogout,
@@ -45,7 +46,7 @@ type Merchant = {
 
 const emptyProduct = {
   name: "",
-  unit: "pcs",
+  unit: "kg",
   price: "1.00",
   stock: "10",
   tags: "",
@@ -387,12 +388,18 @@ export function MerchantPage() {
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                 className="rounded-md border border-[#e7e7e0] bg-transparent px-3 py-2 text-sm"
               />
-              <input
-                placeholder="Unit"
+              <select
                 value={draft.unit}
                 onChange={(e) => setDraft({ ...draft, unit: e.target.value })}
                 className="rounded-md border border-[#e7e7e0] bg-transparent px-3 py-2 text-sm"
-              />
+                aria-label="Unit"
+              >
+                {MERCHANT_UNITS.map((u) => (
+                  <option key={u} value={u}>
+                    {u}
+                  </option>
+                ))}
+              </select>
               <input
                 placeholder="Price (mUSDC)"
                 value={draft.price}
@@ -444,11 +451,26 @@ export function MerchantPage() {
                         onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })}
                         className="rounded-md border border-[#e7e7e0] bg-transparent px-3 py-2 text-sm"
                       />
-                      <input
-                        value={editDraft.unit}
-                        onChange={(e) => setEditDraft({ ...editDraft, unit: e.target.value })}
+                      <select
+                        value={
+                          (MERCHANT_UNITS as readonly string[]).includes(
+                            editDraft.unit,
+                          )
+                            ? editDraft.unit
+                            : "kg"
+                        }
+                        onChange={(e) =>
+                          setEditDraft({ ...editDraft, unit: e.target.value })
+                        }
                         className="rounded-md border border-[#e7e7e0] bg-transparent px-3 py-2 text-sm"
-                      />
+                        aria-label="Unit"
+                      >
+                        {MERCHANT_UNITS.map((u) => (
+                          <option key={u} value={u}>
+                            {u}
+                          </option>
+                        ))}
+                      </select>
                       <input
                         value={editDraft.price}
                         onChange={(e) => setEditDraft({ ...editDraft, price: e.target.value })}

@@ -9,3 +9,14 @@ export {
   normalizeSpeechTranscript,
   transcriptFromRecognitionResults,
 } from "./speech";
+export {
+  UNITS,
+  MERCHANT_UNITS,
+  RECIPE_UNITS,
+  normalizeUnit,
+  unitsCompatible,
+  isMerchantUnit,
+  formatQtyUnit,
+  formatIngredientLabel,
+  type UnitsConfig,
+} from "./units";

@@ -36,6 +36,9 @@ async function main() {
   );
   assert(isWantQuoteExplicit("mau quotes"), "detector accepts mau quotes");
   assert(isWantQuoteExplicit("mau quote"), "detector accepts mau quote");
+  assert(isWantQuoteExplicit("cek harga"), "detector accepts cek harga");
+  assert(isWantQuoteExplicit("mau cek harga"), "detector accepts mau cek harga");
+  assert(isWantQuoteExplicit("harga warung"), "detector accepts harga warung");
   assert(isSkipQuote("belanja sendiri"), "skip quote");
 
   // Quoted → belanja sendiri → idle same dish

@@ -16,7 +16,9 @@ import {
   MOCK_USDC_ABI,
   config,
   createSpeechRecognition,
+  formatIngredientLabel,
   formatMusdc,
+  formatQtyUnit,
   isSpeechRecognitionSupported,
   siweLogin,
   siweLogout,
@@ -32,7 +34,15 @@ type Quote = {
   merchantName: string;
   payTo: string;
   total: number;
-  lines: Array<{ name: string; qty: number; unitPrice: number; tag: string }>;
+  lines: Array<{
+    name: string;
+    qty: number;
+    unitPrice: number;
+    tag: string;
+    unit?: string;
+    needQty?: number;
+    needUnit?: string;
+  }>;
   substitutions?: Array<{ fromTag: string; toTag: string; reason: string }>;
 };
 
@@ -82,13 +92,43 @@ function detectUiLang(text: string): "id" | "en" {
   const t = text.trim();
   const id =
     (t.match(
-      /\b(aku|saya|punya|cuma|enak|masak|bahan|mau|tidak|nggak|iya|ya|menu|resep)\b/gi,
+      /\b(aku|saya|punya|cuma|cuman|enak|masak|bahan|mau|tidak|nggak|iya|ya|menu|resep|belanja|sendiri|cek\s+harga|harga\s+warung)\b/gi,
     ) || []).length;
+  // "quote" is bilingual / command — do not let it alone force English
   const en =
     (t.match(
-      /\b(i\s+have|only|what|cook|recipe|ingredients|yes|no|want|quote|dish)\b/gi,
+      /\b(i\s+have|only\s+have|what\s+can|cook|recipe|ingredients|please|want\s+quote|start\s+cooking|dish)\b/gi,
     ) || []).length;
-  return en > id ? "en" : "id";
+  if (en > id) return "en";
+  if (id > 0) return "id";
+  return "id";
+}
+
+/** Short bilingual commands — keep prior replyLang (don't flip on bare "quote"). */
+function isStickyLangUtterance(text: string): boolean {
+  const t = text
+    .trim()
+    .toLowerCase()
+    .replace(/[.…,!?？！。、;:"""''`~]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!t) return true;
+  return (
+    /^(quote|quotes|mau quote|want quote|cek harga|minta harga|ambil harga|harga warung|mau cek harga)$/.test(
+      t,
+    ) ||
+    /^(ya|iya|tidak|nggak|gak|yes|no|ok|oke|okay|lanjut|balik|ulang|mulai|mulai masak|belanja sendiri|beli sendiri|langsung|batal|cancel)$/.test(
+      t,
+    ) ||
+    /^(quote|cek harga|mau quote|want quote|minta harga)\s+(aja|dong|deh|lah|ya|please)$/.test(
+      t,
+    )
+  );
+}
+
+function resolveUiLang(text: string, prev: "id" | "en"): "id" | "en" {
+  if (isStickyLangUtterance(text)) return prev;
+  return detectUiLang(text);
 }
 
 function plainForSpeech(text: string): string {
@@ -118,7 +158,7 @@ export function CookerChatPage() {
     {
       id: nid(),
       role: "agent",
-      text: "Hai — aku asisten masak Botlevy. Ceritakan mau masak apa, atau bahan apa yang ada di dapur (mis. “cuma punya daging sapi, enak apa?”).",
+      text: "Hai — aku asisten masak Botlevy. Ceritakan mau masak apa, atau bahan apa yang ada di dapur (mis. “cuma punya daging sapi, enak masak apa ya?”).",
       at: new Date().toISOString(),
       kind: "text",
     },
@@ -142,6 +182,7 @@ export function CookerChatPage() {
   const handsFreeAskedSessionRef = useRef<string | null>(null);
   const sessionRef = useRef<CookingSession | null>(null);
   const sessionStatusRef = useRef<string | null>(null);
+  const replyLangRef = useRef<"id" | "en">("id");
   const messagesRef = useRef<ChatMessage[]>(messages);
   const recRef = useRef<ReturnType<typeof createSpeechRecognition>>(null);
   const rearmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -162,6 +203,7 @@ export function CookerChatPage() {
   sessionRef.current = session;
   sessionStatusRef.current = session?.status ?? null;
   messagesRef.current = messages;
+  replyLangRef.current = replyLang;
 
   const wrongChain = isConnected && chainId !== CHAIN_ID;
   const signedIn =
@@ -554,7 +596,8 @@ export function CookerChatPage() {
   }
 
   async function runPlanning(goal: string, selectedDish?: string) {
-    const lang = detectUiLang(goal);
+    const lang = resolveUiLang(goal, replyLangRef.current);
+    replyLangRef.current = lang;
     setReplyLang(lang);
     const res = await fetch(`${API_URL}/agent/runs`, {
       method: "POST",
@@ -636,11 +679,11 @@ export function CookerChatPage() {
             : data.status === "ask_quote"
               ? lang === "en"
                 ? "Want a warung quote?"
-                : "Mau quote dari warung?"
+                : "Mau cek harga dari warung?"
               : data.status === "idle"
                 ? lang === "en"
                   ? "Ready — say start cooking or want quote."
-                  : "Siap — bilang mulai masak atau mau quote."
+                  : "Siap — bilang mulai masak atau cek harga."
                 : data.status === "confirm_gap"
                   ? lang === "en"
                     ? "Is that correct?"
@@ -678,7 +721,7 @@ export function CookerChatPage() {
       text =
         lang === "en"
           ? `Recipe **${data.plan?.dish}**. Missing items — warung quote ready to pay.`
-          : `Resep **${data.plan?.dish}**. Ada bahan kurang — quote warung siap dibayar.`;
+          : `Resep **${data.plan?.dish}**. Ada bahan kurang — harga warung siap dibayar.`;
     } else {
       text = data.message || `Status: ${data.status}`;
     }
@@ -812,7 +855,11 @@ export function CookerChatPage() {
 
     setDraft("");
     setError("");
-    setReplyLang(detectUiLang(text));
+    {
+      const lang = resolveUiLang(text, replyLangRef.current);
+      replyLangRef.current = lang;
+      setReplyLang(lang);
+    }
     push({ role: "user", text, kind: "text" });
     setBusy(true);
     try {
@@ -1140,10 +1187,15 @@ export function CookerChatPage() {
                 {m.kind === "prep" && m.prepChecks ? (
                   <ul className="mt-3 space-y-2">
                     {Object.entries(m.prepChecks).map(([tag, ok]) => {
-                      const label =
-                        (m.plan ?? session?.plan)?.ingredients.find(
-                          (i) => i.tag.toLowerCase() === tag.toLowerCase(),
-                        )?.name?.trim() || tag.replace(/_/g, " ");
+                      const ing = (m.plan ?? session?.plan)?.ingredients.find(
+                        (i) => i.tag.toLowerCase() === tag.toLowerCase(),
+                      );
+                      const label = formatIngredientLabel({
+                        name: ing?.name,
+                        tag,
+                        qty: ing?.qty,
+                        unit: ing?.unit,
+                      });
                       return (
                         <li key={tag}>
                           <label className="flex cursor-pointer items-center gap-2 text-sm">
@@ -1195,6 +1247,10 @@ export function CookerChatPage() {
                       {m.quote.lines.map((l) => (
                         <li key={`${l.tag}-${l.name}`}>
                           {l.name} × {l.qty}
+                          {l.unit ? ` ${l.unit}` : ""}
+                          {l.needQty != null && l.needUnit
+                            ? ` · butuh ${formatQtyUnit(l.needQty, l.needUnit)}`
+                            : ""}
                         </li>
                       ))}
                     </ul>

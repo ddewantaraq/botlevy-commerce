@@ -31,8 +31,18 @@ import { detectReplyLang, pickCopy, type ReplyLang } from "./reply-lang.js";
 import type { OrchestratorContext } from "./types.js";
 import { appendStep } from "./types.js";
 import { isOffTopicByRules, isOffTopicUtterance } from "./planning-gate.js";
+import { formatIngredientLabel, formatQtyUnit } from "../units.js";
 
 export { parseBahanList } from "./tools/pantry.js";
+
+function formatMissingLine(m: Ingredient): string {
+  return formatIngredientLabel({
+    name: m.name,
+    tag: m.tag,
+    qty: m.qty,
+    unit: m.unit,
+  });
+}
 
 export type DishFlowResult =
   | { type: "passthrough" }
@@ -97,7 +107,7 @@ export function extractInlineBahan(goal: string): string[] | null {
   return null;
 }
 
-/** Soft ASR: “quotes” → “quote”. */
+/** Soft ASR: “quotes” → “quote”; Bahasa harga phrases stay as-is for matching. */
 export function softNormalizeQuoteWords(t: string): string {
   return t
     .replace(/\bquotes\b/gi, "quote")
@@ -105,15 +115,23 @@ export function softNormalizeQuoteWords(t: string): string {
     .replace(/\bkuote\b/gi, "quote");
 }
 
-/** Explicit want-quote phrases (no bare ya/ok). */
+/** Explicit want-quote / cek harga phrases (no bare ya/ok). */
 export function isWantQuoteExplicit(t: string): boolean {
   const n = softNormalizeQuoteWords(normalizeConfirmText(t));
   return (
     /^(quote|mau quote|butuh quote|minta quote|iya quote|want quote|get quote)$/.test(
       n,
     ) ||
-    /^(quote|mau quote|minta quote)\s+(aja|dong|deh|lah|ya|please)$/.test(n) ||
+    /^(cek harga|minta harga|ambil harga|harga warung|mau cek harga)$/.test(
+      n,
+    ) ||
+    /^(quote|mau quote|minta quote|cek harga|minta harga)\s+(aja|dong|deh|lah|ya|please)$/.test(
+      n,
+    ) ||
     /\b(mau\s+quote|butuh\s+quote|minta\s+quote|jadi\s+mau\s+quote|want\s+(a\s+)?quote|pesan\s+(dari\s+)?warung|ambil\s+quote|quote\s+dong)\b/.test(
+      n,
+    ) ||
+    /\b(cek\s+harga|minta\s+harga|ambil\s+harga|harga\s+warung|mau\s+cek\s+harga)\b/.test(
       n,
     )
   );
@@ -121,7 +139,7 @@ export function isWantQuoteExplicit(t: string): boolean {
 
 function looksQuoteIsh(t: string): boolean {
   const n = softNormalizeQuoteWords(normalizeConfirmText(t));
-  return /\b(quote|warung|merchant)\b/.test(n);
+  return /\b(quote|warung|merchant|cek\s+harga|harga\s+warung)\b/.test(n);
 }
 
 /** Ask-quote phase: explicit phrases or bare affirmative (ya = take quote). */
@@ -168,7 +186,7 @@ function formatGapMessage(
       `Recipe **${dish}** — with what you listed (**${have}**), it looks complete.\n\nIs this correct? Say **yes** or **no**.`,
     );
   }
-  const gap = missing.map((m) => `• ${m.name} (${m.tag})`).join("\n");
+  const gap = missing.map((m) => `• ${formatMissingLine(m)}`).join("\n");
   return pickCopy(
     lang,
     `Resep **${dish}**. Bahan yang kamu sebut: **${have}**.\n\nYang masih kurang:\n${gap}\n\nApakah daftar ini sudah benar? Bilang **ya** atau **tidak**.`,
@@ -197,10 +215,12 @@ function askQuoteMessage(
   missing: Ingredient[],
   lang: ReplyLang,
 ): string {
-  const gap = missing.map((m) => m.name).join(", ");
+  const gap = missing
+    .map((m) => `${m.name} (${formatQtyUnit(m.qty, m.unit)})`)
+    .join(", ");
   return pickCopy(
     lang,
-    `Bahan kurang untuk **${dish}**: ${gap}.\n\nMau **quote** dari warung, atau belanja sendiri? Bilang **ya** = quote / **tidak** = belanja sendiri.`,
+    `Bahan kurang untuk **${dish}**: ${gap}.\n\nMau **cek harga** dari warung, atau belanja sendiri? Bilang **ya** = cek harga / **tidak** = belanja sendiri.`,
     `Missing for **${dish}**: ${gap}.\n\nWant a warung **quote**, or buy on your own? Say **yes** = quote / **no** = buy yourself.`,
   );
 }
@@ -208,7 +228,7 @@ function askQuoteMessage(
 function idleMessage(dish: string, lang: ReplyLang): string {
   return pickCopy(
     lang,
-    `Oke — kamu belanja sendiri. Resep **${dish}** tetap tersimpan.\n\nBilang **mulai masak** kalau siap, **mau quote** kalau berubah pikiran, atau sebut menu baru.`,
+    `Oke — kamu belanja sendiri. Resep **${dish}** tetap tersimpan.\n\nBilang **mulai masak** kalau siap, **cek harga** kalau berubah pikiran, atau sebut menu baru.`,
     `OK — you'll buy yourself. Recipe **${dish}** is saved here.\n\nSay **start cooking** when ready, **want quote** if you change your mind, or name a new dish.`,
   );
 }
@@ -216,7 +236,7 @@ function idleMessage(dish: string, lang: ReplyLang): string {
 function idleNudge(dish: string, lang: ReplyLang): string {
   return pickCopy(
     lang,
-    `Masih di resep **${dish}**. Bilang **mau quote**, **mulai masak**, atau sebut menu / bahan baru.`,
+    `Masih di resep **${dish}**. Bilang **cek harga**, **mulai masak**, atau sebut menu / bahan baru.`,
     `Still on **${dish}**. Say **want quote**, **start cooking**, or name a new dish / ingredients.`,
   );
 }
@@ -230,13 +250,13 @@ function noMerchantIdleMessage(
   if (reason === "no_merchant") {
     return pickCopy(
       lang,
-      `Warung belum punya stok untuk bahan **${dish}**.\n\nResep tetap tersimpan — kamu bisa **belanja sendiri**. Bilang **mulai masak** kalau siap, **mau quote** kalau mau coba lagi, atau sebut menu baru.`,
+      `Warung belum punya stok untuk bahan **${dish}**.\n\nResep tetap tersimpan — kamu bisa **belanja sendiri**. Bilang **mulai masak** kalau siap, **cek harga** kalau mau coba lagi, atau sebut menu baru.`,
       `No signed-in warung has stock for **${dish}**.\n\nRecipe is saved — you can **shop yourself**. Say **start cooking** when ready, **want quote** to try again, or name a new dish.`,
     );
   }
   return pickCopy(
     lang,
-    `Gagal ambil quote untuk **${dish}**. Resep tetap tersimpan.\n\nBilang **mulai masak**, **mau quote** lagi, atau sebut menu baru.`,
+    `Gagal ambil harga warung untuk **${dish}**. Resep tetap tersimpan.\n\nBilang **mulai masak**, **cek harga** lagi, atau sebut menu baru.`,
     `Could not get a quote for **${dish}**. Recipe is saved.\n\nSay **start cooking**, **want quote** again, or name a new dish.`,
   );
 }
