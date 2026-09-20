@@ -15,7 +15,7 @@ const KNOWN_DISH_RE =
   /\b(masak|cook|buat|make|recipe\s+for)\b.+\b(ayam|semur|rendang|soto|nasi|steak|sop|soup|curry|gulai|tumis|goreng|bakar|mie|bakso)\b/i;
 
 /** Indonesian / common dish cues for bare menu mentions like "soto ayam". */
-const DISH_CUE_RE =
+export const DISH_CUE_RE =
   /\b(soto|ayam|semur|rendang|nasi|steak|sop|soup|curry|gulai|tumis|goreng|bakar|mie|bakso|gado|pecel|rawon|opor|sate|capcay|sayur|sup|bubur|lodeh|rica|balado)\b/i;
 
 /**

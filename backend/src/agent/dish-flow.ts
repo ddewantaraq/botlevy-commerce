@@ -1,8 +1,12 @@
 import type { AgentRun, Ingredient, PlanningDraft, RecipePlan } from "../store.js";
 import {
+  clearLastReadyRun,
+  clearPendingStartPrep,
   clearPlanningDraft,
   getLastPlanningPantry,
+  getLastReadyRunId,
   getPlanningDraft,
+  getRun,
   markReadyForPrep,
   newId,
   saveRun,
@@ -17,6 +21,7 @@ import {
 import {
   classifyIntentRules,
   looksLikeBareDish,
+  PANTRY_FIRST_RE,
 } from "./subagents/classify-intent.js";
 import { runMerchantAgent } from "./subagents/merchant-agent.js";
 import { runRecipeAgent } from "./subagents/recipe-agent.js";
@@ -24,6 +29,7 @@ import { normalizePantryTags, parseBahanList, toolDiffPantry } from "./tools/pan
 import { detectReplyLang, pickCopy, type ReplyLang } from "./reply-lang.js";
 import type { OrchestratorContext } from "./types.js";
 import { appendStep } from "./types.js";
+import { isOffTopicByRules, isOffTopicUtterance } from "./planning-gate.js";
 
 export { parseBahanList } from "./tools/pantry.js";
 
@@ -90,17 +96,41 @@ export function extractInlineBahan(goal: string): string[] | null {
   return null;
 }
 
-function isWantQuote(t: string): boolean {
-  const n = normalizeConfirmText(t);
-  if (isAffirmative(n)) return true;
+/** Soft ASR: “quotes” → “quote”. */
+export function softNormalizeQuoteWords(t: string): string {
+  return t
+    .replace(/\bquotes\b/gi, "quote")
+    .replace(/\bkuotes\b/gi, "quote")
+    .replace(/\bkuote\b/gi, "quote");
+}
+
+/** Explicit want-quote phrases (no bare ya/ok). */
+export function isWantQuoteExplicit(t: string): boolean {
+  const n = softNormalizeQuoteWords(normalizeConfirmText(t));
   return (
-    /^(quote|mau quote|butuh quote|minta quote|iya quote)$/.test(n) ||
-    /\b(mau\s+quote|butuh\s+quote|minta\s+quote|pesan\s+dari\s+warung)\b/.test(n)
+    /^(quote|mau quote|butuh quote|minta quote|iya quote|want quote|get quote)$/.test(
+      n,
+    ) ||
+    /^(quote|mau quote|minta quote)\s+(aja|dong|deh|lah|ya|please)$/.test(n) ||
+    /\b(mau\s+quote|butuh\s+quote|minta\s+quote|jadi\s+mau\s+quote|want\s+(a\s+)?quote|pesan\s+(dari\s+)?warung|ambil\s+quote|quote\s+dong)\b/.test(
+      n,
+    )
   );
 }
 
-function isSkipQuote(t: string): boolean {
-  const n = normalizeConfirmText(t);
+function looksQuoteIsh(t: string): boolean {
+  const n = softNormalizeQuoteWords(normalizeConfirmText(t));
+  return /\b(quote|warung|merchant)\b/.test(n);
+}
+
+/** Ask-quote phase: explicit phrases or bare affirmative (ya = take quote). */
+function isWantQuote(t: string): boolean {
+  if (isWantQuoteExplicit(t)) return true;
+  return isAffirmative(t);
+}
+
+export function isSkipQuote(t: string): boolean {
+  const n = softNormalizeQuoteWords(normalizeConfirmText(t));
   if (isNegative(n)) return true;
   return (
     /^(skip|belanja sendiri|beli sendiri|gak usah|tidak usah)$/.test(n) ||
@@ -188,6 +218,117 @@ function idleNudge(dish: string, lang: ReplyLang): string {
     `Masih di resep **${dish}**. Bilang **mau quote**, **mulai masak**, atau sebut menu / bahan baru.`,
     `Still on **${dish}**. Say **want quote**, **start cooking**, or name a new dish / ingredients.`,
   );
+}
+
+/** Stay on current phase; remind user what to say (off-topic / gibberish). */
+function stayOnPhase(
+  draft: PlanningDraft,
+  lang: ReplyLang,
+): DishFlowResult {
+  const prefix = pickCopy(
+    lang,
+    "Itu belum terkait masak. ",
+    "That doesn't relate to cooking. ",
+  );
+  if (draft.phase === "ask_quote") {
+    return {
+      type: "ask_quote",
+      dish: draft.dish,
+      message: prefix + askQuoteMessage(draft.dish, draft.missing ?? [], lang),
+      plan: draft.plan!,
+      missing: draft.missing ?? [],
+      userBahan: draft.userBahan,
+    };
+  }
+  if (draft.phase === "confirm_gap") {
+    return {
+      type: "confirm_gap",
+      dish: draft.dish,
+      message:
+        prefix +
+        (draft.plan
+          ? formatGapMessage(
+              draft.dish,
+              draft.userBahan,
+              draft.missing ?? [],
+              lang,
+            )
+          : pickCopy(
+              lang,
+              `Bilang **ya** atau **tidak** untuk **${draft.dish}**.`,
+              `Say **yes** or **no** for **${draft.dish}**.`,
+            )),
+      plan: draft.plan!,
+      missing: draft.missing ?? [],
+      userBahan: draft.userBahan,
+    };
+  }
+  if (draft.phase === "await_bahan") {
+    return {
+      type: "ask_bahan",
+      dish: draft.dish,
+      message: prefix + askBahanMessage(draft.dish, lang),
+    };
+  }
+  // idle / ask_quote already covered; default idle nudge
+  return {
+    type: "idle",
+    dish: draft.dish,
+    message: prefix + idleNudge(draft.dish, lang),
+    plan: draft.plan,
+    missing: draft.missing,
+    userBahan: draft.userBahan,
+  };
+}
+
+/**
+ * “cuma punya magerrr” matches pantry_first via cue, but payload is nonsense.
+ * Bare “enak apa” has empty payload → real pantry intent.
+ */
+function pantryFirstPayloadIsOffTopic(goal: string): boolean {
+  const rest = goal
+    .replace(PANTRY_FIRST_RE, " ")
+    .replace(/^(aku|saya)\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!rest) return false;
+  return isOffTopicByRules(rest);
+}
+
+/**
+ * After a quoted run, user changes mind → belanja sendiri.
+ * Restores idle draft for the same dish (no orchestrator).
+ */
+export function abandonQuotedForSelfBuy(
+  address: string,
+  goal: string,
+): DishFlowResult | null {
+  const runId = getLastReadyRunId(address);
+  if (!runId) return null;
+  const run = getRun(runId);
+  if (!run?.plan || run.status !== "quoted") return null;
+
+  const a = address.toLowerCase();
+  const lang = detectReplyLang(goal);
+  clearPendingStartPrep(a);
+  clearLastReadyRun(a);
+  setPlanningDraft({
+    cookerAddress: a,
+    dish: run.plan.dish || run.selectedDish || "Menu",
+    phase: "idle",
+    userBahan: [...(run.pantry ?? [])],
+    plan: run.plan,
+    missing: run.missing ?? [],
+    updatedAt: new Date().toISOString(),
+  });
+  return {
+    type: "idle",
+    dish: run.plan.dish,
+    message: idleMessage(run.plan.dish, lang),
+    plan: run.plan,
+    missing: run.missing ?? [],
+    userBahan: [...(run.pantry ?? [])],
+  };
 }
 
 async function planAndGap(
@@ -399,14 +540,39 @@ export async function handleDishPlanningTurn(opts: {
   }
 
   const ruleIntent = classifyIntentRules(goal);
+  const draft = getPlanningDraft(address);
 
-  // Pantry-first always wins; clear any stale draft
+  // Off-topic / mood / gibberish: never advance any planning phase
+  // (must run BEFORE pantry_first, which would clear the draft)
+  if (draft) {
+    const clearIntent =
+      isStartPrep(goal) ||
+      isSkipQuote(goal) ||
+      isWantQuoteExplicit(goal) ||
+      isAffirmative(goal) ||
+      isNegative(goal) ||
+      looksLikeBareDish(goal) ||
+      ruleIntent === "known_dish";
+    if (
+      isOffTopicByRules(goal) ||
+      (!clearIntent && (await isOffTopicUtterance(goal)))
+    ) {
+      return stayOnPhase(draft, lang);
+    }
+    // pantry_first cue + nonsense payload (e.g. "cuma punya magerrr")
+    if (
+      ruleIntent === "pantry_first" &&
+      pantryFirstPayloadIsOffTopic(goal)
+    ) {
+      return stayOnPhase(draft, lang);
+    }
+  }
+
+  // Real pantry-first: clear draft and let orchestrator suggest
   if (ruleIntent === "pantry_first") {
     clearPlanningDraft(address);
     return { type: "passthrough" };
   }
-
-  const draft = getPlanningDraft(address);
 
   // --- ask_quote: want merchant quote or buy own ---
   if (draft?.phase === "ask_quote") {
@@ -435,6 +601,7 @@ export async function handleDishPlanningTurn(opts: {
       return { type: "run", run: finalizeQuote(draft, goal) };
     }
     if (skip) {
+      clearPendingStartPrep(address);
       setPlanningDraft({ ...draft, phase: "idle" });
       return {
         type: "idle",
@@ -457,7 +624,11 @@ export async function handleDishPlanningTurn(opts: {
 
   // --- idle: remember last dish/plan until next intent ---
   if (draft?.phase === "idle") {
-    if (isWantQuote(goal)) {
+    const wantQuote =
+      isWantQuoteExplicit(goal) ||
+      (Boolean(draft.missing?.length) && looksQuoteIsh(goal));
+    if (wantQuote) {
+      clearPendingStartPrep(address);
       if (!draft.plan || !(draft.missing && draft.missing.length > 0)) {
         if (draft.plan) {
           return { type: "run", run: saveCookableRun(draft, goal) };

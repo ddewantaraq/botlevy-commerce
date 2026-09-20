@@ -1,11 +1,22 @@
 /** Browser TTS + SpeechRecognition helpers (ChatGPT-style mic). */
 
-export function speakText(text: string, lang = "id-ID") {
-  if (typeof window === "undefined" || !window.speechSynthesis) return;
+export function speakText(
+  text: string,
+  lang = "id-ID",
+  onEnd?: () => void,
+) {
+  if (typeof window === "undefined" || !window.speechSynthesis) {
+    onEnd?.();
+    return;
+  }
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = lang;
   u.rate = 0.95;
+  if (onEnd) {
+    u.onend = () => onEnd();
+    u.onerror = () => onEnd();
+  }
   window.speechSynthesis.speak(u);
 }
 
@@ -19,6 +30,9 @@ export function normalizeSpeechTranscript(raw: string): string {
   return raw
     .trim()
     .replace(/[.…,!?？！。、;:"""''`~]+/g, " ")
+    .replace(/\bquotes\b/gi, "quote")
+    .replace(/\bkuotes\b/gi, "quote")
+    .replace(/\bkuote\b/gi, "quote")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -28,12 +42,13 @@ type RecognitionResultLike = {
   isFinal: boolean;
 };
 
-type RecognitionLike = {
+export type RecognitionLike = {
   lang: string;
   continuous: boolean;
   interimResults: boolean;
   start: () => void;
   stop: () => void;
+  abort?: () => void;
   onresult:
     | ((ev: { results: ArrayLike<RecognitionResultLike> }) => void)
     | null;
@@ -67,7 +82,11 @@ export function isSpeechRecognitionSupported(): boolean {
   return Boolean(w.SpeechRecognition || w.webkitSpeechRecognition);
 }
 
-export function createSpeechRecognition(): RecognitionLike | null {
+export function createSpeechRecognition(opts?: {
+  continuous?: boolean;
+  interimResults?: boolean;
+  lang?: string;
+}): RecognitionLike | null {
   if (typeof window === "undefined") return null;
   const w = window as unknown as {
     SpeechRecognition?: new () => RecognitionLike;
@@ -76,8 +95,9 @@ export function createSpeechRecognition(): RecognitionLike | null {
   const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
   if (!Ctor) return null;
   const rec = new Ctor();
-  rec.lang = "id-ID";
-  rec.continuous = false;
-  rec.interimResults = false;
+  rec.lang = opts?.lang ?? "id-ID";
+  // One utterance per start; browser stops on silence. Re-arm loop = hands-free.
+  rec.continuous = opts?.continuous ?? false;
+  rec.interimResults = opts?.interimResults ?? false;
   return rec;
 }

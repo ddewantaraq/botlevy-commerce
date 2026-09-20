@@ -124,12 +124,35 @@ export function CookerChatPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [listening, setListening] = useState(false);
+  const [handsFree, setHandsFree] = useState(false);
+  const [pendingHandsFreeAsk, setPendingHandsFreeAsk] = useState(false);
+  const [ttsSpeaking, setTtsSpeaking] = useState(false);
   const [replyLang, setReplyLang] = useState<"id" | "en">("id");
   const [session, setSession] = useState<CookingSession | null>(null);
   const [confirmingPay, setConfirmingPay] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const handsFreeRef = useRef(false);
+  const busyRef = useRef(false);
+  const ttsSpeakingRef = useRef(false);
+  const pendingHandsFreeAskRef = useRef(false);
+  const handsFreeAskedSessionRef = useRef<string | null>(null);
+  const sessionStatusRef = useRef<string | null>(null);
+  const recRef = useRef<ReturnType<typeof createSpeechRecognition>>(null);
+  const rearmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingCookStartRef = useRef<{
+    reply: string;
+    speak?: string;
+    cookStep?: ChatMessage["cookStep"];
+    prepChecks?: Record<string, boolean>;
+    plan?: Plan;
+    sessionId: string;
+  } | null>(null);
   const micSupported = isSpeechRecognitionSupported();
+
+  // busy/sessionStatus: sync from state. handsFree / pendingHandsFreeAsk: refs are source of truth
+  busyRef.current = busy;
+  sessionStatusRef.current = session?.status ?? null;
 
   const wrongChain = isConnected && chainId !== CHAIN_ID;
   const signedIn =
@@ -208,10 +231,238 @@ export function CookerChatPage() {
     ]);
   }
 
+  function isYesUtterance(t: string) {
+    const n = t.trim().toLowerCase().replace(/[.…,!?]+$/g, "").trim();
+    return /^(ya+|y+|yes|iya+h?|ok+|oke+|okay|sip|yup|yeah)$/.test(n);
+  }
+
+  function isNoUtterance(t: string) {
+    const n = t.trim().toLowerCase().replace(/[.…,!?]+$/g, "").trim();
+    return /^(tidak|tdk|nggak|nga+k|gak|enggak|no+|jangan)$/.test(n);
+  }
+
+  /** Hands-free only during cooking (not prep). */
+  function handsFreePhaseActive(status: string | null | undefined) {
+    return status === "cooking";
+  }
+
+  /** Arm mic when hands-free is on, or while waiting for ya/tidak. */
+  function shouldArmMic() {
+    if (busyRef.current || ttsSpeakingRef.current) return false;
+    if (!handsFreePhaseActive(sessionStatusRef.current)) return false;
+    return handsFreeRef.current || pendingHandsFreeAskRef.current;
+  }
+
   function speakAgent(text: string, lang: "id" | "en" = replyLang) {
     const plain = plainForSpeech(text);
-    if (plain) speakText(plain, ttsLangFor(lang));
+    // Mute mic while agent speaks — avoid capturing TTS as user input
+    ttsSpeakingRef.current = true;
+    setTtsSpeaking(true);
+    stopMicInternal();
+    if (plain) {
+      speakText(plain, ttsLangFor(lang), () => {
+        ttsSpeakingRef.current = false;
+        setTtsSpeaking(false);
+        if (shouldArmMic()) scheduleRearm(600);
+      });
+    } else {
+      ttsSpeakingRef.current = false;
+      setTtsSpeaking(false);
+      if (shouldArmMic()) scheduleRearm(200);
+    }
   }
+
+  function stopMicInternal() {
+    if (rearmTimerRef.current) {
+      clearTimeout(rearmTimerRef.current);
+      rearmTimerRef.current = null;
+    }
+    try {
+      recRef.current?.stop();
+    } catch {
+      /* ignore */
+    }
+    recRef.current = null;
+    setListening(false);
+  }
+
+  function scheduleRearm(ms = 300) {
+    if (rearmTimerRef.current) clearTimeout(rearmTimerRef.current);
+    rearmTimerRef.current = setTimeout(() => {
+      rearmTimerRef.current = null;
+      if (shouldArmMic()) startMicLoop();
+    }, ms);
+  }
+
+  function startMicLoop() {
+    if (!micSupported) return;
+    if (busyRef.current || ttsSpeakingRef.current) return;
+    if (recRef.current) return;
+
+    const rec = createSpeechRecognition({ continuous: false });
+    if (!rec) {
+      setError("Voice tidak didukung di browser ini — ketik saja.");
+      setHandsFree(false);
+      handsFreeRef.current = false;
+      return;
+    }
+    recRef.current = rec;
+    setListening(true);
+    setError("");
+    rec.onresult = (ev) => {
+      const soft = transcriptFromRecognitionResults(ev.results);
+      if (soft) {
+        stopMicInternal();
+        void handleSend(soft);
+      }
+    };
+    rec.onerror = () => {
+      setListening(false);
+      recRef.current = null;
+      if (shouldArmMic()) {
+        scheduleRearm(600);
+      } else if (!handsFreeRef.current && !pendingHandsFreeAskRef.current) {
+        setError("Mic error — ketik perintah di chat.");
+      }
+    };
+    rec.onend = () => {
+      setListening(false);
+      recRef.current = null;
+      if (shouldArmMic()) scheduleRearm(300);
+    };
+    try {
+      rec.start();
+    } catch {
+      setListening(false);
+      recRef.current = null;
+      if (shouldArmMic()) scheduleRearm(500);
+      else setError("Tidak bisa mulai mic — ketik saja.");
+    }
+  }
+
+  function enableHandsFree() {
+    setPendingHandsFreeAsk(false);
+    pendingHandsFreeAskRef.current = false;
+    setHandsFree(true);
+    handsFreeRef.current = true;
+    if (!ttsSpeakingRef.current && !busyRef.current) {
+      startMicLoop();
+    }
+  }
+
+  function disableHandsFree() {
+    setHandsFree(false);
+    handsFreeRef.current = false;
+    stopMicInternal();
+  }
+
+  function flushPendingCookStart() {
+    const stashed = pendingCookStartRef.current;
+    pendingCookStartRef.current = null;
+    if (!stashed) return false;
+    push({
+      role: "agent",
+      text: stashed.reply,
+      kind: stashed.cookStep ? "cook_step" : "text",
+      cookStep: stashed.cookStep,
+      sessionId: stashed.sessionId,
+      prepChecks: stashed.prepChecks,
+      plan: stashed.plan,
+    });
+    speakAgent(stashed.speak || stashed.reply);
+    return true;
+  }
+
+  /** Apply hands-free choice, then show the stashed first cook step (if any). */
+  function resolveHandsFreeAsk(enable: boolean) {
+    setPendingHandsFreeAsk(false);
+    pendingHandsFreeAskRef.current = false;
+    if (session?.id) handsFreeAskedSessionRef.current = session.id;
+
+    setHandsFree(enable);
+    handsFreeRef.current = enable;
+    if (!enable) stopMicInternal();
+
+    const flushed = flushPendingCookStart();
+    if (!flushed) {
+      const text = enable
+        ? replyLang === "en"
+          ? "Hands-free **on**. Say lanjut / balik / ulang when ready."
+          : "Hands-free **on**. Bilang lanjut / balik / ulang kalau siap."
+        : replyLang === "en"
+          ? "Hands-free **off**. Tap the mic when you want to speak, or type."
+          : "Hands-free **off**. Ketuk mic kalau mau bicara, atau ketik.";
+      push({ role: "agent", text, kind: "text" });
+      if (enable && !ttsSpeakingRef.current && !busyRef.current) {
+        startMicLoop();
+      }
+    }
+    // If flushed: speakAgent mutes mic and re-arms after TTS when handsFree
+  }
+
+  function askHandsFreeOnce(sessionId: string) {
+    if (handsFreeAskedSessionRef.current === sessionId) return;
+    handsFreeAskedSessionRef.current = sessionId;
+    setPendingHandsFreeAsk(true);
+    pendingHandsFreeAskRef.current = true;
+    disableHandsFree();
+    const text =
+      replyLang === "en"
+        ? "Hands-free mic while cooking? Say **yes** / **no**, or use **Hands-free On/Off**."
+        : "Hands-free mic saat masak? Bilang **ya** / **tidak**, atau pakai tombol **Hands-free On/Off**.";
+    push({ role: "agent", text, kind: "text" });
+    speakAgent(text);
+  }
+
+  function toggleMic() {
+    if (session?.status === "cooking") {
+      if (pendingHandsFreeAskRef.current) {
+        startMicLoop();
+        return;
+      }
+      if (handsFreeRef.current) disableHandsFree();
+      else {
+        handsFreeAskedSessionRef.current = session.id;
+        enableHandsFree();
+      }
+      return;
+    }
+    startMicLoop();
+  }
+
+  // Leaving cooking / session end → clear hands-free + any stashed step
+  useEffect(() => {
+    if (!session) {
+      handsFreeAskedSessionRef.current = null;
+      pendingCookStartRef.current = null;
+      setPendingHandsFreeAsk(false);
+      pendingHandsFreeAskRef.current = false;
+      if (handsFreeRef.current) disableHandsFree();
+      return;
+    }
+    if (session.status !== "cooking") {
+      pendingCookStartRef.current = null;
+      setPendingHandsFreeAsk(false);
+      pendingHandsFreeAskRef.current = false;
+      if (handsFreeRef.current) disableHandsFree();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.status, session?.id]);
+
+  // Pause mic while busy; re-arm when free (cooking hands-free or ya/tidak ask)
+  useEffect(() => {
+    if (busy) {
+      stopMicInternal();
+    } else if (shouldArmMic()) {
+      scheduleRearm(400);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy]);
+
+  useEffect(() => {
+    return () => stopMicInternal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function pushAgent(msg: Omit<ChatMessage, "id" | "at" | "role">) {
     push({ ...msg, role: "agent" });
@@ -334,6 +585,7 @@ export function CookerChatPage() {
 
   async function sendSessionMessage(text: string) {
     if (!session) return;
+    const wasCooking = session.status === "cooking";
     const res = await fetch(`${API_URL}/cooker/sessions/${session.id}/message`, {
       method: "POST",
       credentials: "include",
@@ -346,23 +598,46 @@ export function CookerChatPage() {
       return;
     }
     setSession(data.session);
-    const kind =
-      data.cookStep
-        ? "cook_step"
-        : data.session.status === "prep"
-          ? "prep"
-          : "text";
-    push({
-      role: "agent",
-      text: data.reply,
-      kind,
-      cookStep: data.cookStep,
-      sessionId: data.session.id,
-      prepChecks: data.session.prepChecks,
-      plan: data.session.plan,
-    });
-    speakAgent(data.speak || data.reply);
+    sessionStatusRef.current = data.session.status;
+
+    const enteringCooking =
+      data.session.status === "cooking" &&
+      !wasCooking &&
+      micSupported &&
+      handsFreeAskedSessionRef.current !== data.session.id;
+
+    if (enteringCooking) {
+      // Ask hands-free first; stash step until ya/tidak / On/Off
+      pendingCookStartRef.current = {
+        reply: data.reply,
+        speak: data.speak,
+        cookStep: data.cookStep,
+        prepChecks: data.session.prepChecks,
+        plan: data.session.plan,
+        sessionId: data.session.id,
+      };
+      askHandsFreeOnce(data.session.id);
+    } else {
+      const kind =
+        data.cookStep
+          ? "cook_step"
+          : data.session.status === "prep"
+            ? "prep"
+            : "text";
+      push({
+        role: "agent",
+        text: data.reply,
+        kind,
+        cookStep: data.cookStep,
+        sessionId: data.session.id,
+        prepChecks: data.session.prepChecks,
+        plan: data.session.plan,
+      });
+      speakAgent(data.speak || data.reply);
+    }
+
     if (data.handoff || data.session.status === "abandoned" || data.session.status === "done") {
+      pendingCookStartRef.current = null;
       setSession(null);
     }
   }
@@ -374,6 +649,35 @@ export function CookerChatPage() {
       setError("SIWE login as cooker first");
       return;
     }
+
+    // Hands-free opt-in — use ref so mic/typed answers never leak to cook API
+    if (
+      pendingHandsFreeAskRef.current &&
+      (session?.status === "cooking" || pendingCookStartRef.current)
+    ) {
+      setDraft("");
+      setError("");
+      push({ role: "user", text, kind: "text" });
+      if (isYesUtterance(text)) {
+        resolveHandsFreeAsk(true);
+        return;
+      }
+      if (isNoUtterance(text)) {
+        resolveHandsFreeAsk(false);
+        return;
+      }
+      push({
+        role: "agent",
+        text:
+          replyLang === "en"
+            ? "Please say **yes** or **no** for hands-free mic (or use On/Off)."
+            : "Bilang **ya** atau **tidak** untuk hands-free mic (atau pakai On/Off).",
+        kind: "text",
+      });
+      if (micSupported) scheduleRearm(400);
+      return;
+    }
+
     setDraft("");
     setError("");
     setReplyLang(detectUiLang(text));
@@ -547,33 +851,6 @@ export function CookerChatPage() {
     }
   }
 
-  function startMic() {
-    const rec = createSpeechRecognition();
-    if (!rec) {
-      setError("Voice tidak didukung di browser ini — ketik saja.");
-      return;
-    }
-    setListening(true);
-    setError("");
-    rec.onresult = (ev) => {
-      const soft = transcriptFromRecognitionResults(ev.results);
-      if (soft) {
-        void handleSend(soft);
-      }
-    };
-    rec.onerror = () => {
-      setListening(false);
-      setError("Mic error — ketik perintah di chat.");
-    };
-    rec.onend = () => setListening(false);
-    try {
-      rec.start();
-    } catch {
-      setListening(false);
-      setError("Tidak bisa mulai mic — ketik saja.");
-    }
-  }
-
   return (
     <div className="flex h-[100dvh] flex-col">
       <header className="shrink-0 border-b border-[var(--line)] bg-[var(--canvas)]/90 px-4 py-3 backdrop-blur">
@@ -582,7 +859,13 @@ export function CookerChatPage() {
             <p className="text-base font-semibold text-[var(--ink)]">Botlevy Cooker</p>
             <p className="text-xs">
               {session
-                ? `Sesi: ${session.status} · ${session.dish}`
+                ? `Sesi: ${session.status} · ${session.dish}${
+                    session.status === "cooking" && handsFree
+                      ? " · Hands-free on"
+                      : session.status === "cooking" && pendingHandsFreeAsk
+                        ? " · Hands-free?"
+                        : ""
+                  }`
                 : "Chat · plan · pre-cook · cook-time"}
             </p>
           </div>
@@ -791,6 +1074,42 @@ export function CookerChatPage() {
         ) : null}
 
         <div className="shrink-0 border-t border-[var(--line)] bg-[var(--canvas)]/95 px-4 py-3">
+          {session?.status === "cooking" && micSupported ? (
+            <div className="mx-auto mb-2 flex max-w-3xl flex-wrap items-center gap-2 text-xs">
+              <span className="text-[var(--body)]">Hands-free</span>
+              <button
+                type="button"
+                disabled={!signedIn || busy}
+                onClick={() => resolveHandsFreeAsk(true)}
+                className={`rounded-lg px-2.5 py-1 font-semibold ${
+                  !pendingHandsFreeAsk && handsFree
+                    ? "bg-[var(--accent)] text-white"
+                    : "border border-[var(--line)] bg-white text-[var(--ink)]"
+                }`}
+              >
+                On
+              </button>
+              <button
+                type="button"
+                disabled={!signedIn || busy}
+                onClick={() => resolveHandsFreeAsk(false)}
+                className={`rounded-lg px-2.5 py-1 font-semibold ${
+                  !pendingHandsFreeAsk && !handsFree
+                    ? "bg-[var(--ink)] text-white"
+                    : "border border-[var(--line)] bg-white text-[var(--ink)]"
+                }`}
+              >
+                Off
+              </button>
+              {pendingHandsFreeAsk ? (
+                <span className="text-[var(--body)]">Choose On or Off…</span>
+              ) : listening ? (
+                <span className="text-red-600">Listening…</span>
+              ) : ttsSpeaking ? (
+                <span className="text-[var(--body)]">Agent speaking…</span>
+              ) : null}
+            </div>
+          ) : null}
           <div className="mx-auto flex max-w-3xl items-end gap-2">
             <textarea
               value={draft}
@@ -804,9 +1123,11 @@ export function CookerChatPage() {
               rows={1}
               placeholder={
                 signedIn
-                  ? session?.status === "cooking"
-                    ? "lanjut / balik / ulang / selesai…"
-                    : "Pesan ke agent…"
+                  ? pendingHandsFreeAsk
+                    ? "ya / tidak (hands-free)…"
+                    : session?.status === "cooking"
+                      ? "lanjut / balik / ulang / selesai…"
+                      : "Pesan ke agent…"
                   : "Login dulu…"
               }
               disabled={!signedIn || busy}
@@ -814,13 +1135,21 @@ export function CookerChatPage() {
             />
             <button
               type="button"
-              title={micSupported ? "Voice input" : "Voice tidak didukung"}
+              title={
+                !micSupported
+                  ? "Voice tidak didukung"
+                  : session?.status === "cooking"
+                    ? handsFree
+                      ? "Hands-free on — tap to turn off"
+                      : "Hands-free off — tap to turn on"
+                    : "Voice input (push-to-talk)"
+              }
               aria-label={micSupported ? "Voice input" : "Voice tidak didukung"}
-              aria-pressed={listening}
-              disabled={!signedIn || busy || listening || !micSupported}
-              onClick={() => startMic()}
+              aria-pressed={listening || handsFree}
+              disabled={!signedIn || !micSupported || (busy && !handsFree)}
+              onClick={() => toggleMic()}
               className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border ${
-                listening
+                listening || handsFree
                   ? "animate-pulse border-red-400 bg-red-50 text-red-600"
                   : "border-[var(--line)] bg-white text-[var(--ink)]"
               } disabled:opacity-40`}
@@ -838,7 +1167,12 @@ export function CookerChatPage() {
             <button
               type="button"
               title="Stop TTS"
-              onClick={() => stopSpeaking()}
+              onClick={() => {
+                stopSpeaking();
+                ttsSpeakingRef.current = false;
+                setTtsSpeaking(false);
+                if (shouldArmMic()) scheduleRearm(300);
+              }}
               className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--line)] bg-white text-xs sm:flex"
             >
               🔇

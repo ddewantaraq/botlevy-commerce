@@ -1,13 +1,16 @@
 import { Router } from "express";
 import { z } from "zod";
 import {
+  abandonQuotedForSelfBuy,
   beginCommercePick,
   handleDishPlanningTurn,
+  isSkipQuote,
   isStartPrep,
+  isWantQuoteExplicit,
   type DishFlowResult,
 } from "../agent/dish-flow.js";
 import { runOrchestrator } from "../agent/orchestrator/execute.js";
-import { gatePlanningRequest } from "../agent/planning-gate.js";
+import { gatePlanningRequest, isOffTopicByRules } from "../agent/planning-gate.js";
 import { handlePlanningResetTurn } from "../agent/planning-reset.js";
 import { detectReplyLang, pickCopy } from "../agent/reply-lang.js";
 import { classifyConfirmIntent } from "../cooker/confirm-intent.js";
@@ -178,8 +181,17 @@ async function tryStartPrepFromSpeech(
   const runId = pendingId || lastReadyId;
   if (!runId) return false;
 
+  // Never steal an explicit quote / belanja sendiri / change-of-mind for prep
+  if (isWantQuoteExplicit(goal) || isSkipQuote(goal)) return false;
+  if (isOffTopicByRules(goal)) return false;
+
   // Prefer idle draft path: let dish-flow turn mulai into cookable then auto-start
   if (getPlanningDraft(address)?.phase === "idle" && isStartPrep(goal)) {
+    return false;
+  }
+
+  // Idle with missing: dish-flow owns mau quote / mulai
+  if (getPlanningDraft(address)?.phase === "idle") {
     return false;
   }
 
@@ -230,6 +242,15 @@ agentRouter.post("/runs", requireCooker, async (req: AuthedRequest, res) => {
     // Spoken mulai / ya → start prep from last cookable (no orchestrator)
     if (await tryStartPrepFromSpeech(res, address, goal)) {
       return;
+    }
+
+    // Quoted → belanja sendiri: restore idle for same dish (no orchestrator)
+    if (isSkipQuote(goal) && !getPlanningDraft(address)) {
+      const abandoned = abandonQuotedForSelfBuy(address, goal);
+      if (abandoned) {
+        sendDishTurn(res, abandoned, address);
+        return;
+      }
     }
 
     let selectedDish = parsed.data.selectedDish?.trim() || undefined;
