@@ -80,26 +80,50 @@ async function main() {
     cookerAddress: addr,
     goal: "mau quote",
   });
-  assert(turn.type === "run", `expected run got ${turn.type}`);
-  if (turn.type !== "run") throw new Error("not run");
-  assert(
-    turn.run.selectedDish === "Soto Ayam" || turn.run.plan?.dish === "Soto Ayam",
-    `should stay Soto Ayam, got ${turn.run.plan?.dish}`,
-  );
-  assert(
-    turn.run.status === "quoted" ||
-      turn.run.status === "cookable" ||
-      turn.run.status === "no_merchant" ||
-      turn.run.status === "failed",
-    `quote path status ${turn.run.status}`,
-  );
-  assert(turn.run.plan?.dish !== "Nasi Goreng", "must not invent Nasi Goreng");
-  assert(!getPlanningDraft(addr), "draft cleared after finalizeQuote");
-  // New quoted/cookable run may re-arm pending — must not keep decoy Nasi Goreng
-  assert(
-    getPendingStartPrepRunId(addr) !== decoy,
-    "decoy pending must not remain after quote",
-  );
+  // Success → run (quoted/cookable); no stock → idle with draft kept
+  if (turn.type === "idle") {
+    assert(
+      turn.dish === "Soto Ayam",
+      `idle after quote fail should stay Soto, got ${turn.dish}`,
+    );
+    assert(
+      getPlanningDraft(addr)?.phase === "idle",
+      "no_merchant keeps idle draft",
+    );
+    assert(
+      getPendingStartPrepRunId(addr) !== decoy,
+      "decoy pending must not remain after quote fail",
+    );
+    const selfBuy = await handleDishPlanningTurn({
+      cookerAddress: addr,
+      goal: "belanja sendiri",
+    });
+    assert(selfBuy.type === "idle", `belanja sendiri → idle got ${selfBuy.type}`);
+    assert(
+      /belanja sendiri|buy yourself|mulai masak|start cooking/i.test(
+        selfBuy.type === "idle" ? selfBuy.message : "",
+      ),
+      "idle ack after belanja sendiri",
+    );
+  } else {
+    assert(turn.type === "run", `expected run got ${turn.type}`);
+    if (turn.type !== "run") throw new Error("not run");
+    assert(
+      turn.run.selectedDish === "Soto Ayam" ||
+        turn.run.plan?.dish === "Soto Ayam",
+      `should stay Soto Ayam, got ${turn.run.plan?.dish}`,
+    );
+    assert(
+      turn.run.status === "quoted" || turn.run.status === "cookable",
+      `quote path status ${turn.run.status}`,
+    );
+    assert(turn.run.plan?.dish !== "Nasi Goreng", "must not invent Nasi Goreng");
+    assert(!getPlanningDraft(addr), "draft cleared after successful quote");
+    assert(
+      getPendingStartPrepRunId(addr) !== decoy,
+      "decoy pending must not remain after quote",
+    );
+  }
 
   // Skip → idle clears pending
   clearPlanningMemory(addr);
@@ -121,16 +145,29 @@ async function main() {
   assert(!getPendingStartPrepRunId(addr), "pending cleared on belanja sendiri");
   assert(getPlanningDraft(addr)?.phase === "idle", "now idle");
 
+  // Idle + belanja sendiri again → still idle ack (no gate)
+  const skipAgain = await handleDishPlanningTurn({
+    cookerAddress: addr,
+    goal: "belanja sendiri",
+  });
+  assert(skipAgain.type === "idle", "idle belanja sendiri stays idle");
+
   const again = await handleDishPlanningTurn({
     cookerAddress: addr,
     goal: "mau quote",
   });
-  assert(again.type === "run", "quote after change of mind");
+  assert(
+    again.type === "run" || again.type === "idle",
+    `quote after change of mind got ${again.type}`,
+  );
   if (again.type === "run") {
     assert(
       again.run.plan?.dish === "Soto Ayam",
       "still Soto after change of mind",
     );
+  } else if (again.type === "idle") {
+    assert(again.dish === "Soto Ayam", "still Soto idle after quote fail");
+    assert(getPlanningDraft(addr)?.phase === "idle", "idle draft after fail");
   }
 
   console.log("smoke-idle-quote OK");

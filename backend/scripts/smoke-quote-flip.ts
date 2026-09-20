@@ -16,6 +16,7 @@ import {
   markReadyForPrep,
   newId,
   saveRun,
+  setLastReadyRun,
 } from "../src/store.js";
 import { seedIfEmpty } from "../src/seed.js";
 
@@ -74,6 +75,33 @@ async function main() {
     "draft dish Soto Ayam",
   );
   assert(getLastReadyRunId(addr) === null, "quoted ready cleared");
+
+  // no_merchant → belanja sendiri recovery (no draft, lastReady = no_merchant)
+  clearPlanningMemory(addr);
+  const nmId = newId("run");
+  saveRun({
+    id: nmId,
+    goal: "ya",
+    pantry: ["chicken"],
+    steps: [],
+    intent: "known_dish",
+    status: "no_merchant",
+    selectedDish: "Soto Ayam",
+    plan,
+    missing,
+    createdAt: new Date().toISOString(),
+  });
+  // setLastReadyRun only — do not arm prep pending
+  setLastReadyRun(addr, nmId);
+  assert(getLastReadyRunId(addr) === nmId, "ready no_merchant");
+  assert(!getPlanningDraft(addr), "no draft after no_merchant wipe");
+
+  const fromNm = abandonQuotedForSelfBuy(addr, "belanja sendiri");
+  assert(fromNm?.type === "idle", `no_merchant belanja → idle got ${fromNm?.type}`);
+  if (fromNm?.type !== "idle") throw new Error("not idle");
+  assert(fromNm.dish === "Soto Ayam", "no_merchant recovery same dish");
+  assert(getPlanningDraft(addr)?.phase === "idle", "idle draft from no_merchant");
+  assert(getLastReadyRunId(addr) === null, "no_merchant ready cleared");
 
   // Off-topic: mager / magerrr
   const g1 = await gatePlanningRequest("mager");

@@ -10,6 +10,7 @@ import {
   markReadyForPrep,
   newId,
   saveRun,
+  setLastReadyRun,
   setPlanningDraft,
 } from "../store.js";
 import {
@@ -220,6 +221,26 @@ function idleNudge(dish: string, lang: ReplyLang): string {
   );
 }
 
+/** After quote fails (no stock / error) — keep recipe, stay idle. */
+function noMerchantIdleMessage(
+  dish: string,
+  reason: "no_merchant" | "failed",
+  lang: ReplyLang,
+): string {
+  if (reason === "no_merchant") {
+    return pickCopy(
+      lang,
+      `Warung belum punya stok untuk bahan **${dish}**.\n\nResep tetap tersimpan — kamu bisa **belanja sendiri**. Bilang **mulai masak** kalau siap, **mau quote** kalau mau coba lagi, atau sebut menu baru.`,
+      `No signed-in warung has stock for **${dish}**.\n\nRecipe is saved — you can **shop yourself**. Say **start cooking** when ready, **want quote** to try again, or name a new dish.`,
+    );
+  }
+  return pickCopy(
+    lang,
+    `Gagal ambil quote untuk **${dish}**. Resep tetap tersimpan.\n\nBilang **mulai masak**, **mau quote** lagi, atau sebut menu baru.`,
+    `Could not get a quote for **${dish}**. Recipe is saved.\n\nSay **start cooking**, **want quote** again, or name a new dish.`,
+  );
+}
+
 /** Stay on current phase; remind user what to say (off-topic / gibberish). */
 function stayOnPhase(
   draft: PlanningDraft,
@@ -296,7 +317,7 @@ function pantryFirstPayloadIsOffTopic(goal: string): boolean {
 }
 
 /**
- * After a quoted run, user changes mind → belanja sendiri.
+ * After a quoted (or no_merchant) run, user chooses belanja sendiri.
  * Restores idle draft for the same dish (no orchestrator).
  */
 export function abandonQuotedForSelfBuy(
@@ -306,7 +327,12 @@ export function abandonQuotedForSelfBuy(
   const runId = getLastReadyRunId(address);
   if (!runId) return null;
   const run = getRun(runId);
-  if (!run?.plan || run.status !== "quoted") return null;
+  if (
+    !run?.plan ||
+    (run.status !== "quoted" && run.status !== "no_merchant")
+  ) {
+    return null;
+  }
 
   const a = address.toLowerCase();
   const lang = detectReplyLang(goal);
@@ -417,8 +443,8 @@ function finalizeQuote(
   }
 
   const result = runMerchantAgent(ctx);
-  clearPlanningDraft(draft.cookerAddress);
   if (result.ok) {
+    clearPlanningDraft(draft.cookerAddress);
     const run = saveRun({
       id,
       goal,
@@ -435,18 +461,56 @@ function finalizeQuote(
     markReadyForPrep(draft.cookerAddress, run.id);
     return run;
   }
-  return saveRun({
+  // Keep recipe context as idle so belanja sendiri / mulai masak still work
+  const failStatus =
+    result.reason === "no_merchant" ? "no_merchant" : "failed";
+  const failed = saveRun({
     id,
     goal,
     pantry: draft.userBahan,
     steps: ctx.steps,
     intent: "known_dish",
-    status: result.reason === "no_merchant" ? "no_merchant" : "failed",
+    status: failStatus,
     selectedDish: draft.dish,
     plan: draft.plan,
     missing: draft.missing,
     createdAt,
   });
+  setPlanningDraft({
+    ...draft,
+    phase: "idle",
+    updatedAt: new Date().toISOString(),
+  });
+  clearPendingStartPrep(draft.cookerAddress);
+  setLastReadyRun(draft.cookerAddress, failed.id);
+  return failed;
+}
+
+/** Run finalizeQuote; map merchant failure to idle handoff (not raw 400). */
+function finalizeQuoteResult(
+  draft: PlanningDraft,
+  goal: string,
+  lang: ReplyLang,
+): DishFlowResult {
+  const run = finalizeQuote(draft, goal);
+  if (
+    (run.status === "no_merchant" || run.status === "failed") &&
+    (run.plan || draft.plan)
+  ) {
+    return {
+      type: "idle",
+      dish: draft.dish,
+      message: noMerchantIdleMessage(
+        draft.dish,
+        run.status === "no_merchant" ? "no_merchant" : "failed",
+        lang,
+      ),
+      plan: draft.plan ?? run.plan,
+      missing: draft.missing ?? run.missing,
+      userBahan: draft.userBahan,
+    };
+  }
+  return { type: "run", run };
 }
 
 /**
@@ -598,7 +662,7 @@ export async function handleDishPlanningTurn(opts: {
           message: reaskBahanMessage(draft.dish, lang),
         };
       }
-      return { type: "run", run: finalizeQuote(draft, goal) };
+      return finalizeQuoteResult(draft, goal, lang);
     }
     if (skip) {
       clearPendingStartPrep(address);
@@ -624,6 +688,17 @@ export async function handleDishPlanningTurn(opts: {
 
   // --- idle: remember last dish/plan until next intent ---
   if (draft?.phase === "idle") {
+    if (isSkipQuote(goal)) {
+      clearPendingStartPrep(address);
+      return {
+        type: "idle",
+        dish: draft.dish,
+        message: idleMessage(draft.dish, lang),
+        plan: draft.plan,
+        missing: draft.missing,
+        userBahan: draft.userBahan,
+      };
+    }
     const wantQuote =
       isWantQuoteExplicit(goal) ||
       (Boolean(draft.missing?.length) && looksQuoteIsh(goal));
@@ -642,7 +717,7 @@ export async function handleDishPlanningTurn(opts: {
           userBahan: draft.userBahan,
         };
       }
-      return { type: "run", run: finalizeQuote(draft, goal) };
+      return finalizeQuoteResult(draft, goal, lang);
     }
     if (isStartPrep(goal)) {
       if (!draft.plan) {

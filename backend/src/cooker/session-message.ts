@@ -15,6 +15,7 @@ export type SessionMessageResult = {
   session: CookingSession;
   reply: string;
   cookStep?: { index: number; total: number; text: string };
+  prepStep?: { index: number; total: number; tag: string; text: string };
   handoff?: { goal: string };
   speak?: string;
 };
@@ -24,6 +25,12 @@ const CLARIFY_COOK =
 
 const CLARIFY_POST_COOK =
   "Mau **simpan menu**, atau mulai chat baru?";
+
+const ALL_READY_INTERRUPT =
+  "Bahan udah semua ready, siap masak? Bilang atau ketik **mulai masak**.";
+
+const PREP_MODE_ASK =
+  "Mau cek bahan **satu-satu** (bilang lanjut / ulang), atau **langsung** siap **mulai masak**?";
 
 export function normalizeUtterance(raw: string): string {
   return raw
@@ -79,8 +86,11 @@ function isAllReady(t: string) {
 }
 
 function isEscape(t: string) {
-  return /\b(ganti menu|batal masak|cancel|stop cooking|menu lain|pesan bahan|enak apa|mau ganti|ganti rencana|abort)\b/.test(
-    t,
+  return (
+    /^(batal|cancel|abort)$/.test(t) ||
+    /\b(ganti\s+menu|batal(\s+(masak|aja|deh|lah))?|cancel|stop\s+cooking|menu\s+lain|pesan\s+bahan|enak\s+apa|mau\s+ganti|ganti\s+rencana|abort)\b/.test(
+      t,
+    )
   );
 }
 
@@ -103,7 +113,7 @@ function isStop(t: string) {
 }
 
 function isYes(t: string) {
-  return isAffirmative(t) || /^(ganti|batal)$/.test(t);
+  return isAffirmative(t) || /^(ganti)$/.test(t);
 }
 
 function isNo(t: string) {
@@ -168,6 +178,152 @@ function ingredientLabel(session: CookingSession, tag: string): string {
   return name || humanizeTag(tag);
 }
 
+function isPrepWalkChoice(t: string) {
+  const n = t.trim().toLowerCase();
+  return (
+    /^(11|1\s*1|1-1|satu2|satu\s*2|satu-?satu|walk|cek)$/.test(n) ||
+    /\b(11|satu2|satu\s*2|satu[\s-]?satu)\b/.test(n) ||
+    /\b(sebut\s+(bahan\s+)?satu|bahan\s+satu|cek\s+(bahan\s+)?satu|one\s+by\s+one|ya\s+cek|mau\s+cek)\b/.test(
+      n,
+    )
+  );
+}
+
+function isPrepFreeChoice(t: string) {
+  const n = t.trim().toLowerCase();
+  return (
+    /^(langsung|langsung\s+aja|skip|checklist|bebas)$/.test(n) ||
+    /\b(langsung(\s+aja)?|skip|checklist|gak\s+usah|nggak\s+usah|tidak\s+usah|bebas)\b/.test(
+      n,
+    )
+  );
+}
+
+/** Re-list / re-speak all prep ingredients (free mode). ID + EN. */
+function isRelistIngredients(t: string) {
+  const n = t.trim().toLowerCase();
+  return (
+    /\b(ulang|ulangi|sebut(in)?|bacain|daftar)\b.*\bbahan/.test(n) ||
+    /\bbahan(-?bahan)?(nya)?\b.*\b(lagi|apa\s+aja|apa\s+saja|sebut)/.test(n) ||
+    /\b(list|repeat|say|read)\b.*\bingredients?\b/.test(n) ||
+    /\bingredients?\b.*\b(again|list|repeat)\b/.test(n) ||
+    /\bwhat\b.*\b(do\s+i\s+need|ingredients?\b)/.test(n) ||
+    /^(bahan(nya)?|ingredients?)$/.test(n)
+  );
+}
+
+function prepIngredientSpeakList(session: CookingSession): string {
+  const names = prepTags(session).map((tag) => ingredientLabel(session, tag));
+  if (names.length === 0) return `Persiapan bahan untuk ${session.dish}.`;
+  return `Bahan untuk ${session.dish}: ${names.join(", ")}. Bilang mulai masak kalau siap.`;
+}
+
+function prepRelistReply(session: CookingSession): SessionMessageResult {
+  return {
+    session,
+    reply: prepSummary(session),
+    speak: prepIngredientSpeakList(session),
+  };
+}
+
+function prepTags(session: CookingSession): string[] {
+  return session.plan.ingredients.map((i) => i.tag.toLowerCase());
+}
+
+function allReadyInterrupt(session: CookingSession): SessionMessageResult {
+  touch(session);
+  return {
+    session,
+    reply: ALL_READY_INTERRUPT,
+    speak: "Bahan udah semua ready, siap masak? Bilang mulai masak.",
+  };
+}
+
+function prepStepReply(
+  session: CookingSession,
+  prefix?: string,
+): SessionMessageResult {
+  const tags = prepTags(session);
+  const total = tags.length;
+  const index = Math.min(
+    Math.max(session.prepIndex ?? 0, 0),
+    Math.max(total - 1, 0),
+  );
+  const tag = tags[index] ?? "";
+  const label = ingredientLabel(session, tag);
+  const body = `Bahan ${index + 1}/${total}: **${label}**.\n\nBilang **lanjut** kalau sudah, atau **ulang** / **balik**.`;
+  const reply = prefix ? `${prefix}\n\n${body}` : body;
+  return {
+    session,
+    reply,
+    prepStep: { index, total, tag, text: label },
+    speak: `Bahan ${index + 1} dari ${total}: ${label}. Bilang lanjut kalau sudah.`,
+  };
+}
+
+function applyPrepWalkNext(session: CookingSession): SessionMessageResult {
+  const tags = prepTags(session);
+  const idx = session.prepIndex ?? 0;
+  const tag = tags[idx];
+  if (tag) session.prepChecks[tag] = true;
+
+  if (allPrepReady(session) || idx >= tags.length - 1) {
+    // Ensure all marked when finishing last
+    for (const t of tags) session.prepChecks[t] = true;
+    return allReadyInterrupt(session);
+  }
+
+  session.prepIndex = idx + 1;
+  touch(session);
+  return prepStepReply(session);
+}
+
+function applyPrepWalkBack(session: CookingSession): SessionMessageResult {
+  session.prepIndex = Math.max(0, (session.prepIndex ?? 0) - 1);
+  touch(session);
+  return prepStepReply(session, "Kembali ke bahan sebelumnya.");
+}
+
+function applyPrepWalkRepeat(session: CookingSession): SessionMessageResult {
+  return prepStepReply(session, "Mengulang bahan ini:");
+}
+
+function applyPrepAllReadyWalk(session: CookingSession): SessionMessageResult {
+  for (const k of Object.keys(session.prepChecks)) {
+    session.prepChecks[k] = true;
+  }
+  return allReadyInterrupt(session);
+}
+
+function enterPrepWalk(session: CookingSession): SessionMessageResult {
+  session.prepGuide = "walk";
+  session.prepIndex = 0;
+  touch(session);
+  return prepStepReply(session, "Oke — cek bahan satu-satu.");
+}
+
+function enterPrepFree(session: CookingSession): SessionMessageResult {
+  session.prepGuide = "free";
+  touch(session);
+  return {
+    session,
+    reply: prepSummary(session),
+    speak: prepIngredientSpeakList(session),
+  };
+}
+
+function afterMarkInWalk(session: CookingSession): SessionMessageResult {
+  if (allPrepReady(session)) return allReadyInterrupt(session);
+  const tags = prepTags(session);
+  const nextIdx = tags.findIndex((t) => !session.prepChecks[t]);
+  if (nextIdx >= 0) {
+    session.prepIndex = nextIdx;
+    touch(session);
+    return prepStepReply(session);
+  }
+  return allReadyInterrupt(session);
+}
+
 function prepSummary(session: CookingSession) {
   const lines = Object.entries(session.prepChecks).map(
     ([tag, ok]) => `${ok ? "✓" : "○"} ${ingredientLabel(session, tag)}`,
@@ -188,6 +344,9 @@ function applyStart(session: CookingSession): SessionMessageResult {
 function applyAllReady(session: CookingSession): SessionMessageResult {
   for (const k of Object.keys(session.prepChecks)) {
     session.prepChecks[k] = true;
+  }
+  if (session.prepGuide === "walk") {
+    return allReadyInterrupt(session);
   }
   touch(session);
   return {
@@ -391,8 +550,105 @@ export async function handleSessionMessage(
     };
   }
 
-  // Prep phase — commands before ingredient-tag heuristics
+  // Prep phase — mode ask / walk / free checklist
   if (session.status === "prep") {
+    const guide = session.prepGuide ?? "ask";
+
+    // --- Mode ask ---
+    if (guide === "ask") {
+      if (isStart(text)) {
+        const applied = applyStart(session);
+        if (applied) return applied;
+      }
+      if (isPrepWalkChoice(text)) return enterPrepWalk(session);
+      if (isPrepFreeChoice(text)) return enterPrepFree(session);
+      if (isEscape(text) || isStop(text)) {
+        const applied = applyIntent(session, isEscape(text) ? "escape" : "stop");
+        if (applied) return applied;
+      }
+      const llmAsk = await classifyCookIntent({
+        text,
+        phase: "prep",
+        dish: session.dish,
+        stepIndex: 0,
+        stepTotal: prepTags(session).length,
+        prepGuide: "ask",
+      });
+      if (llmAsk === "start") return applyStart(session);
+      if (llmAsk === "prep_walk") return enterPrepWalk(session);
+      if (llmAsk === "prep_free") return enterPrepFree(session);
+      if (llmAsk === "escape" || llmAsk === "stop" || llmAsk === "off_topic") {
+        const applied = applyIntent(session, llmAsk);
+        if (applied) return applied;
+      }
+      return {
+        session,
+        reply: `Persiapan **${session.dish}**. ${PREP_MODE_ASK}`,
+        speak: PREP_MODE_ASK.replace(/\*\*/g, ""),
+      };
+    }
+
+    // --- Walk mode ---
+    if (guide === "walk") {
+      if (isStart(text)) return applyStart(session);
+      if (isNext(text)) return applyPrepWalkNext(session);
+      if (isBack(text)) return applyPrepWalkBack(session);
+      if (isRepeat(text)) return applyPrepWalkRepeat(session);
+      if (isAllReady(text) || isDone(text)) return applyPrepAllReadyWalk(session);
+      if (isSave(text) || isStop(text) || isEscape(text)) {
+        const kw = matchPrepKeyword(text);
+        if (kw) {
+          const applied = applyIntent(session, kw);
+          if (applied) return applied;
+        }
+      }
+
+      const siapMatch = text.match(
+        /(?:^|\s)([a-z0-9_]+)\s+siap\b|\bsiap\s+([a-z0-9_]+)/i,
+      );
+      if (siapMatch) {
+        const tag = (siapMatch[1] || siapMatch[2] || "").toLowerCase();
+        if (markTagReady(session, tag)) {
+          return afterMarkInWalk(session);
+        }
+      }
+      const maybeTag = text.replace(/\s+/g, "_");
+      if (maybeTag.length >= 3 && markTagReady(session, maybeTag)) {
+        return afterMarkInWalk(session);
+      }
+
+      // lanjut when already all ready
+      if (allPrepReady(session) && isNext(text)) {
+        return allReadyInterrupt(session);
+      }
+
+      const llm = await classifyCookIntent({
+        text,
+        phase: "prep",
+        dish: session.dish,
+        stepIndex: session.prepIndex ?? 0,
+        stepTotal: prepTags(session).length,
+        prepGuide: "walk",
+      });
+      if (llm === "start") return applyStart(session);
+      if (llm === "next") return applyPrepWalkNext(session);
+      if (llm === "back") return applyPrepWalkBack(session);
+      if (llm === "repeat") return applyPrepWalkRepeat(session);
+      if (llm === "all_ready" || llm === "done") return applyPrepAllReadyWalk(session);
+      if (llm === "escape" || llm === "stop" || llm === "off_topic" || llm === "save") {
+        const applied = applyIntent(session, llm);
+        if (applied) return applied;
+      }
+
+      return prepStepReply(session, "Bilang **lanjut** / **ulang** / **balik**, atau **mulai masak**.");
+    }
+
+    // --- Free checklist mode ---
+    if (isPrepWalkChoice(text)) return enterPrepWalk(session);
+    if (isRelistIngredients(text) || isRepeat(text)) {
+      return prepRelistReply(session);
+    }
+
     const kw = matchPrepKeyword(text);
     if (kw) {
       const applied = applyIntent(session, kw);
@@ -407,7 +663,7 @@ export async function handleSessionMessage(
       if (markTagReady(session, tag)) {
         touch(session);
         const extra = allPrepReady(session)
-          ? "\n\nSemua bahan siap. Ketik **mulai masak**."
+          ? `\n\n${ALL_READY_INTERRUPT}`
           : "";
         return { session, reply: `${prepSummary(session)}${extra}` };
       }
@@ -417,9 +673,14 @@ export async function handleSessionMessage(
     if (maybeTag.length >= 3 && markTagReady(session, maybeTag)) {
       touch(session);
       const extra = allPrepReady(session)
-        ? "\n\nSemua bahan siap. Ketik **mulai masak**."
+        ? `\n\n${ALL_READY_INTERRUPT}`
         : "";
       return { session, reply: `${prepSummary(session)}${extra}` };
+    }
+
+    // lanjut while free + all ready → interrupt
+    if (isNext(text) && allPrepReady(session)) {
+      return allReadyInterrupt(session);
     }
 
     const llm = await classifyCookIntent({
@@ -428,9 +689,15 @@ export async function handleSessionMessage(
       dish: session.dish,
       stepIndex: session.stepIndex,
       stepTotal: session.plan.steps.length,
+      prepGuide: "free",
     });
+    if (llm === "start") {
+      const applied = applyIntent(session, llm);
+      if (applied) return applied;
+    }
+    if (llm === "repeat") return prepRelistReply(session);
+    if (llm === "prep_walk") return enterPrepWalk(session);
     if (
-      llm === "start" ||
       llm === "all_ready" ||
       llm === "escape" ||
       llm === "stop" ||
@@ -441,7 +708,7 @@ export async function handleSessionMessage(
       if (applied) return applied;
     }
 
-    return { session, reply: prepSummary(session) };
+    return prepRelistReply(session);
   }
 
   // Cooking phase
@@ -514,5 +781,5 @@ export function buildPrepChecks(ingredients: { tag: string }[]): Record<string, 
 }
 
 export function formatPrepIntro(session: CookingSession): string {
-  return prepSummary(session);
+  return `Persiapan **${session.dish}**. ${PREP_MODE_ASK}`;
 }

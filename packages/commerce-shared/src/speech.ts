@@ -1,5 +1,8 @@
 /** Browser TTS + SpeechRecognition helpers (ChatGPT-style mic). */
 
+let speakTimer: ReturnType<typeof setTimeout> | null = null;
+let speakGen = 0;
+
 export function speakText(
   text: string,
   lang = "id-ID",
@@ -9,18 +12,59 @@ export function speakText(
     onEnd?.();
     return;
   }
-  window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = lang;
-  u.rate = 0.95;
-  if (onEnd) {
-    u.onend = () => onEnd();
-    u.onerror = () => onEnd();
+  const plain = text.trim();
+  if (!plain) {
+    onEnd?.();
+    return;
   }
-  window.speechSynthesis.speak(u);
+
+  // Invalidate any in-flight delayed speak / utterance
+  const gen = ++speakGen;
+  if (speakTimer) {
+    clearTimeout(speakTimer);
+    speakTimer = null;
+  }
+  window.speechSynthesis.cancel();
+
+  // Chrome often drops utterances if speak() runs in the same tick as cancel(),
+  // or while SpeechRecognition holds the audio session — delay + resume.
+  speakTimer = setTimeout(() => {
+    speakTimer = null;
+    if (gen !== speakGen) return;
+    if (!window.speechSynthesis) {
+      onEnd?.();
+      return;
+    }
+    try {
+      window.speechSynthesis.resume();
+    } catch {
+      /* ignore */
+    }
+    const u = new SpeechSynthesisUtterance(plain);
+    u.lang = lang;
+    u.rate = 0.95;
+    const done = () => {
+      if (gen !== speakGen) return;
+      onEnd?.();
+    };
+    u.onend = done;
+    u.onerror = done;
+    window.speechSynthesis.speak(u);
+    // Some Chromium builds leave synthesis "paused" until resume after speak()
+    try {
+      window.speechSynthesis.resume();
+    } catch {
+      /* ignore */
+    }
+  }, 120);
 }
 
 export function stopSpeaking() {
+  speakGen += 1;
+  if (speakTimer) {
+    clearTimeout(speakTimer);
+    speakTimer = null;
+  }
   if (typeof window === "undefined" || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
 }
@@ -33,6 +77,11 @@ export function normalizeSpeechTranscript(raw: string): string {
     .replace(/\bquotes\b/gi, "quote")
     .replace(/\bkuotes\b/gi, "quote")
     .replace(/\bkuote\b/gi, "quote")
+    // "satu-satu" often heard as 11 / satu2
+    .replace(/^(11|1\s*1|1-1)$/i, "satu-satu")
+    .replace(/\b(11|1\s*1|1-1)\b/gi, "satu-satu")
+    .replace(/\bsatu\s*2\b/gi, "satu-satu")
+    .replace(/\bsatu2\b/gi, "satu-satu")
     .replace(/\s+/g, " ")
     .trim();
 }

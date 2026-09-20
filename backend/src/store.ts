@@ -141,6 +141,8 @@ export type CookingSessionStatus =
   | "done"
   | "abandoned";
 
+export type PrepGuide = "ask" | "walk" | "free";
+
 export type CookingSession = {
   id: string;
   cookerAddress: string;
@@ -150,6 +152,10 @@ export type CookingSession = {
   dish: string;
   plan: RecipePlan;
   prepChecks: Record<string, boolean>;
+  /** Mode for persiapan bahan: ask choice, one-by-one walk, or free checklist. */
+  prepGuide?: PrepGuide;
+  /** Index into ordered prep tags while prepGuide === "walk". */
+  prepIndex?: number;
   stepIndex: number;
   pendingConfirm?: "abandon_replan" | null;
   quoteId?: string;

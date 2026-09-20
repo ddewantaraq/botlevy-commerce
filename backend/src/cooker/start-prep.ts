@@ -84,6 +84,8 @@ export function startPrepSession(opts: {
     dish,
     plan,
     prepChecks: buildPrepChecks(plan.ingredients),
+    prepGuide: "ask",
+    prepIndex: 0,
     stepIndex: 0,
     pendingConfirm: null,
     quoteId: opts.quoteId,

@@ -187,6 +187,7 @@ cookerRouter.post("/sessions/:id/message", async (req: AuthedRequest, res) => {
       session: result.session,
       reply: result.reply,
       cookStep: result.cookStep,
+      prepStep: result.prepStep,
       handoff: result.handoff,
       speak: result.speak,
     });

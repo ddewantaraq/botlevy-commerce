@@ -30,6 +30,8 @@ function fresh(): CookingSession {
       ],
     },
     prepChecks: buildPrepChecks([{ tag: "beef" }, { tag: "salt" }]),
+    prepGuide: "ask",
+    prepIndex: 0,
     stepIndex: 0,
     pendingConfirm: null,
     createdAt: new Date().toISOString(),
@@ -43,7 +45,7 @@ async function main() {
     "normalize punctuation",
   );
 
-  // Prep copy: names not tags; no Centang di chat
+  // Intro: mode ask (not full checklist)
   const soto: CookingSession = {
     id: "cook_soto",
     cookerAddress: "0xabc",
@@ -58,37 +60,111 @@ async function main() {
       ],
     },
     prepChecks: buildPrepChecks([{ tag: "bay_leaf" }, { tag: "beef" }]),
+    prepGuide: "ask",
+    prepIndex: 0,
     stepIndex: 0,
     pendingConfirm: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
   const intro = formatPrepIntro(soto);
-  assert(/Daun salam/.test(intro), "shows ingredient name Daun salam");
-  assert(/Daging sapi/.test(intro), "shows ingredient name Daging sapi");
-  assert(!/\bbay_leaf\b/.test(intro), "does not show raw tag bay_leaf");
-  assert(!/Centang di chat/i.test(intro), "no Centang di chat");
-  assert(
-    /bilang atau ketik \*\*mulai masak\*\*/i.test(intro),
-    "speak/chat mulai masak instruction",
-  );
+  assert(/Soto Sapi/.test(intro), "intro names dish");
+  assert(/satu-satu/i.test(intro), "intro offers satu-satu");
+  assert(/mulai masak/i.test(intro), "intro mentions mulai masak");
+  assert(soto.prepGuide === "ask", "prepGuide ask");
 
+  // Walk: satu-satu → langkah bahan → lanjut → interrupt → mulai masak
   let s = fresh();
-  let r = await handleSessionMessage(s, "semua siap");
+  let r = await handleSessionMessage(s, "satu-satu");
+  assert(r.session.prepGuide === "walk", "satu-satu → walk");
+  assert(r.prepStep?.index === 0, "bahan 0");
+  assert(/Beef/i.test(r.reply), "first ingredient Beef");
+
+  // ASR / natural walk phrases
+  s = fresh();
+  r = await handleSessionMessage(s, "11");
+  assert(r.session.prepGuide === "walk", "11 → walk");
+  assert(r.prepStep?.index === 0, "11 bahan 0");
+
+  s = fresh();
+  r = await handleSessionMessage(s, "sebut bahan satu2");
+  assert(r.session.prepGuide === "walk", "sebut bahan satu2 → walk");
+
+  r = await handleSessionMessage(r.session, "lanjut");
+  assert(r.session.prepChecks.beef === true, "beef marked");
+  assert(r.prepStep?.index === 1, "bahan 1");
+  assert(/Salt/i.test(r.reply), "second ingredient Salt");
+
+  r = await handleSessionMessage(r.session, "lanjut");
+  assert(r.session.status === "prep", "still prep after last lanjut");
+  assert(Object.values(r.session.prepChecks).every(Boolean), "all marked");
+  assert(/siap masak/i.test(r.reply), "all-ready interrupt");
+  assert(!r.prepStep, "no prepStep on interrupt");
+
+  r = await handleSessionMessage(r.session, "mulai masak");
+  assert(r.session.status === "cooking", "mulai masak → cooking");
+  assert(r.cookStep?.index === 0, "cook step 0");
+
+  // Free: langsung → checklist → semua siap → mulai masak
+  s = fresh();
+  r = await handleSessionMessage(s, "langsung");
+  assert(r.session.prepGuide === "free", "langsung → free");
+  assert(/Persiapan bahan/i.test(r.reply), "checklist summary");
+  assert(/Beef/.test(r.reply), "shows Beef name");
+  assert(!/\bbay_leaf\b/.test(r.reply), "no raw tags");
+
+  s = fresh();
+  r = await handleSessionMessage(s, "langsung aja");
+  assert(r.session.prepGuide === "free", "langsung aja → free");
+
+  // Free: re-list ingredients ID/EN; switch to walk
+  r = await handleSessionMessage(
+    r.session,
+    "bisa ulang lagi ga sebutin bahan-bahannya",
+  );
+  assert(r.session.prepGuide === "free", "relist keeps free");
+  assert(r.session.status === "prep", "relist still prep");
+  assert(/Beef/i.test(r.reply), "relist shows Beef");
+  assert(r.speak && /Beef/i.test(r.speak), "relist speak has Beef");
+
+  r = await handleSessionMessage(r.session, "list the ingredients again");
+  assert(r.session.prepGuide === "free", "EN relist keeps free");
+  assert(/Salt/i.test(r.reply), "EN relist shows Salt");
+
+  r = await handleSessionMessage(r.session, "satu-satu");
+  assert(r.session.prepGuide === "walk", "free → walk via satu-satu");
+  assert(r.prepStep?.index === 0, "walk starts bahan 0");
+
+  s = fresh();
+  r = await handleSessionMessage(s, "langsung");
+  r = await handleSessionMessage(r.session, "semua siap");
   assert(Object.values(r.session.prepChecks).every(Boolean), "all ready");
 
   r = await handleSessionMessage(r.session, "Mulai masak.");
   assert(r.session.status === "cooking", "Mulai masak. → cooking");
   assert(r.cookStep?.index === 0, "step 0");
 
+  // From ask, mulai masak skips walk
   s = fresh();
   r = await handleSessionMessage(s, "mulai memasak");
   assert(r.session.status === "cooking", "mulai memasak → cooking");
 
-  // start must win before any tag heuristic
   s = fresh();
   r = await handleSessionMessage(s, "mulai masak");
   assert(r.session.status === "cooking", "mulai masak before tags");
+
+  // Bare batal → escape confirm
+  s = fresh();
+  r = await handleSessionMessage(s, "batal");
+  assert(r.session.pendingConfirm === "abandon_replan", "batal → confirm");
+  r = await handleSessionMessage(r.session, "ya");
+  assert(r.session.status === "abandoned", "batal ya → abandoned");
+  assert(r.handoff, "handoff after batal");
+
+  // Cook navigation
+  s = fresh();
+  r = await handleSessionMessage(s, "mulai masak");
+  assert(r.session.status === "cooking", "start cook for nav");
 
   r = await handleSessionMessage(r.session, "lanjut");
   assert(r.cookStep?.index === 1, "step 1");
@@ -139,6 +215,15 @@ async function main() {
   r = await handleSessionMessage(r.session, "tidak");
   assert(r.session.pendingConfirm == null, "cancel confirm");
   assert(r.session.status === "cooking", "stay cooking");
+
+  // Walk ulang / balik
+  s = fresh();
+  r = await handleSessionMessage(s, "satu-satu");
+  r = await handleSessionMessage(r.session, "lanjut");
+  r = await handleSessionMessage(r.session, "balik");
+  assert(r.prepStep?.index === 0, "balik → bahan 0");
+  r = await handleSessionMessage(r.session, "ulang");
+  assert(r.prepStep?.index === 0, "ulang stays");
 
   console.log("session-message smoke OK");
 }

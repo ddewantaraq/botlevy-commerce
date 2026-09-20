@@ -162,15 +162,22 @@ async function main() {
       cookerAddress: addr,
       goal: "mau quote",
     });
-    assert(turn.type === "run", `mau quote → run, got ${turn.type}`);
+    assert(
+      turn.type === "run" || turn.type === "idle",
+      `mau quote → run|idle, got ${turn.type}`,
+    );
     if (turn.type === "run") {
       assert(
-        ["quoted", "cookable", "no_merchant", "failed"].includes(turn.run.status),
+        ["quoted", "cookable"].includes(turn.run.status),
         `unexpected ${turn.run.status}`,
       );
+      assert(!getPlanningDraft(addr), "draft cleared after successful quote");
+    } else if (turn.type === "idle") {
+      assert(
+        getPlanningDraft(addr)?.phase === "idle",
+        "no_merchant keeps idle draft",
+      );
     }
-    assert(!getPlanningDraft(addr), "draft cleared after quote");
-  } else {
     // No gap → cookable immediately
     assert(turn.type === "run", `ya+no gap → run, got ${turn.type}`);
     if (turn.type === "run") {
