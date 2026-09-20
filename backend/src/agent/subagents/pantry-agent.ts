@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { hasOllamaKey, ollamaChat } from "../llm/client.js";
+import { hasOllamaKey, ollamaChat, toStepLlm } from "../llm/client.js";
 import { parseLlmJson } from "../llm/json.js";
 import { normalizePantryTags, normalizeTag } from "../tools/pantry.js";
 import type { OrchestratorContext } from "../types.js";
@@ -15,17 +15,23 @@ export async function runPantryAgent(
 ): Promise<string[]> {
   const fromChips = normalizePantryTags(ctx.pantry);
   let fromGoal: string[] = [];
+  let llm: ReturnType<typeof toStepLlm>;
 
   if (hasOllamaKey()) {
     try {
-      const content = await ollamaChat({
+      const { content, meta } = await ollamaChat({
         label: "pantry_normalize",
         system: `Extract pantry ingredient tags from the user message. Return ONLY JSON:
 {"tags":["snake_case",...]}
 Use tags like beef, chicken, garlic, onion, shallot, salt, cooking_oil. Empty array if none.`,
         user: ctx.goal,
       });
-      fromGoal = parseLlmJson(content, pantryNormSchema).tags.map(normalizeTag).filter(Boolean);
+      try {
+        fromGoal = parseLlmJson(content, pantryNormSchema).tags.map(normalizeTag).filter(Boolean);
+        llm = toStepLlm(meta, true);
+      } catch {
+        llm = toStepLlm(meta, false);
+      }
     } catch (err) {
       console.warn("[agent] pantry_normalize LLM failed:", err);
     }
@@ -50,9 +56,16 @@ Use tags like beef, chicken, garlic, onion, shallot, salt, cooking_oil. Empty ar
   }
 
   const merged = normalizePantryTags([...fromChips, ...fromGoal]);
-  appendStep(ctx, "pantry_normalize", { chips: fromChips, goal: ctx.goal }, {
-    pantry: merged,
-  });
+  appendStep(
+    ctx,
+    "pantry_normalize",
+    { chips: fromChips, goal: ctx.goal },
+    {
+      pantry: merged,
+    },
+    undefined,
+    llm,
+  );
   ctx.pantry = merged;
   return merged;
 }

@@ -153,7 +153,7 @@ export { OFF_TOPIC_MOOD, CONFIRM_COOKING };
 async function classifyPlanningLlm(goal: string): Promise<PlanningGateKind> {
   if (!hasOllamaKey()) return "cooking_request";
   try {
-    const content = await ollamaChat({
+    const { content } = await ollamaChat({
       label: "planning_gate",
       temperature: 0,
       system: `Classify a free-form chat before a cooking recipe planner runs.

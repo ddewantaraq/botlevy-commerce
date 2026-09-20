@@ -70,6 +70,7 @@ export function appendStep(
   args?: unknown,
   result?: unknown,
   error?: string,
+  llm?: AgentStep["llm"],
 ): AgentStep {
   const step: AgentStep = {
     tool,
@@ -77,7 +78,21 @@ export function appendStep(
     result,
     error,
     at: new Date().toISOString(),
+    ...(llm ? { llm } : {}),
   };
   ctx.steps.push(step);
   return step;
+}
+
+/** Summary for API responses when steps carry llm payloads (LLM_TRACE). */
+export function summarizeRunObs(steps: AgentStep[]): {
+  llmCalls: number;
+  parseFails: number;
+} | undefined {
+  const withLlm = steps.filter((s) => s.llm);
+  if (withLlm.length === 0) return undefined;
+  return {
+    llmCalls: withLlm.length,
+    parseFails: withLlm.filter((s) => s.llm?.parseOk === false).length,
+  };
 }

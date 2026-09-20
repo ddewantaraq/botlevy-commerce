@@ -32,9 +32,19 @@ import {
   setLastSuggestions,
 } from "../store.js";
 import { normalizePantryTags } from "../agent/tools/pantry.js";
+import { summarizeRunObs } from "../agent/types.js";
+import { env } from "../config.js";
 
 export const agentRouter = Router();
 
+function withObs<T extends Record<string, unknown>>(
+  body: T,
+  steps: import("../store.js").AgentStep[],
+): T & { obs?: { llmCalls: number; parseFails: number } } {
+  if (!env.LLM_TRACE) return body;
+  const obs = summarizeRunObs(steps);
+  return obs ? { ...body, obs } : body;
+}
 const runSchema = z.object({
   goal: z.string().min(1).max(500),
   pantry: z.array(z.string()).optional().default([]),
@@ -69,44 +79,59 @@ function sendRun(
   }
 
   if (run.status === "no_merchant") {
-    res.status(400).json({
-      ok: false,
-      message: "no signed-in merchant has these items in stock",
-      runId: run.id,
-      status: run.status,
-      intent: run.intent,
-      steps: run.steps,
-      plan: run.plan,
-      missing: run.missing,
-    });
+    res.status(400).json(
+      withObs(
+        {
+          ok: false,
+          message: "no signed-in merchant has these items in stock",
+          runId: run.id,
+          status: run.status,
+          intent: run.intent,
+          steps: run.steps,
+          plan: run.plan,
+          missing: run.missing,
+        },
+        run.steps,
+      ),
+    );
     return;
   }
 
   if (run.status === "failed") {
     const lastErr = [...run.steps].reverse().find((s) => s.error)?.error;
-    res.status(500).json({
-      ok: false,
-      message: lastErr || "Agent run failed",
-      runId: run.id,
-      status: run.status,
-      intent: run.intent,
-      steps: run.steps,
-    });
+    res.status(500).json(
+      withObs(
+        {
+          ok: false,
+          message: lastErr || "Agent run failed",
+          runId: run.id,
+          status: run.status,
+          intent: run.intent,
+          steps: run.steps,
+        },
+        run.steps,
+      ),
+    );
     return;
   }
 
-  res.json({
-    ok: true,
-    runId: run.id,
-    status: run.status,
-    intent: run.intent,
-    steps: run.steps,
-    plan: run.plan,
-    missing: run.missing,
-    suggestions: run.suggestions ?? [],
-    quote: run.quote,
-    substitutions: run.quote?.substitutions ?? [],
-  });
+  res.json(
+    withObs(
+      {
+        ok: true,
+        runId: run.id,
+        status: run.status,
+        intent: run.intent,
+        steps: run.steps,
+        plan: run.plan,
+        missing: run.missing,
+        suggestions: run.suggestions ?? [],
+        quote: run.quote,
+        substitutions: run.quote?.substitutions ?? [],
+      },
+      run.steps,
+    ),
+  );
 }
 
 function sendDishTurn(
@@ -368,5 +393,5 @@ agentRouter.get("/runs/:id", (req, res) => {
     res.status(404).json({ ok: false, message: "Run not found" });
     return;
   }
-  res.json({ ok: true, run });
+  res.json(withObs({ ok: true, run }, run.steps));
 });

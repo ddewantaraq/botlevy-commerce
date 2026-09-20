@@ -76,7 +76,21 @@ type ChatMessage = {
   suggestions?: Suggestion[];
   plan?: Plan;
   quote?: Quote;
-  steps?: Array<{ tool: string; result?: unknown; error?: string }>;
+  steps?: Array<{
+    tool: string;
+    args?: unknown;
+    result?: unknown;
+    error?: string;
+    llm?: {
+      label: string;
+      model: string;
+      system?: string;
+      user: string;
+      raw: string;
+      ms: number;
+      parseOk?: boolean;
+    };
+  }>;
   runId?: string;
   cookStep?: { index: number; total: number; text: string };
   prepStep?: { index: number; total: number; tag: string; text: string };
@@ -1296,11 +1310,51 @@ export function CookerChatPage() {
                     <summary className="cursor-pointer text-[var(--body)]">
                       Agent steps
                     </summary>
-                    <ol className="mt-1 space-y-1 font-mono">
+                    <ol className="mt-1 space-y-2 font-mono">
                       {m.steps.map((s, i) => (
-                        <li key={`${s.tool}-${i}`}>
-                          {s.tool}
-                          {s.error ? ` — ${s.error}` : ""}
+                        <li key={`${s.tool}-${i}`} className="border-t border-[var(--line)] pt-1 first:border-0 first:pt-0">
+                          <div>
+                            {s.tool}
+                            {s.error ? ` — ${s.error}` : ""}
+                            {s.llm?.parseOk === false ? " — parseOk:false" : ""}
+                            {s.llm?.ms != null ? ` (${s.llm.ms}ms)` : ""}
+                          </div>
+                          {import.meta.env.VITE_AGENT_DEBUG === "true" ||
+                          import.meta.env.VITE_AGENT_DEBUG === "1" ? (
+                            <div className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all text-[10px] text-[var(--body)] opacity-90">
+                              {s.args != null ? (
+                                <div>
+                                  <span className="font-sans opacity-70">args </span>
+                                  {JSON.stringify(s.args, null, 0)}
+                                </div>
+                              ) : null}
+                              {s.result != null ? (
+                                <div>
+                                  <span className="font-sans opacity-70">result </span>
+                                  {JSON.stringify(s.result, null, 0)}
+                                </div>
+                              ) : null}
+                              {s.llm ? (
+                                <div className="mt-1 space-y-1">
+                                  <div>
+                                    <span className="font-sans opacity-70">llm.user </span>
+                                    {s.llm.user}
+                                  </div>
+                                  <div>
+                                    <span className="font-sans opacity-70">llm.raw </span>
+                                    {s.llm.raw}
+                                  </div>
+                                  {s.llm.system ? (
+                                    <div>
+                                      <span className="font-sans opacity-70">llm.system </span>
+                                      {s.llm.system.slice(0, 500)}
+                                      {s.llm.system.length > 500 ? "…" : ""}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </li>
                       ))}
                     </ol>

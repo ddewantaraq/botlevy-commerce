@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { hasOllamaKey, ollamaChat } from "../llm/client.js";
+import { hasOllamaKey, ollamaChat, toStepLlm } from "../llm/client.js";
 import { parseLlmJson } from "../llm/json.js";
 import type { Intent, OrchestratorContext } from "../types.js";
 import { appendStep } from "../types.js";
@@ -40,10 +40,13 @@ export function classifyIntentRules(goal: string): Intent | null {
   return null;
 }
 
-async function classifyIntentLlm(goal: string): Promise<Intent> {
-  if (!hasOllamaKey()) return "open_goal";
+async function classifyIntentLlm(goal: string): Promise<{
+  intent: Intent;
+  llm?: ReturnType<typeof toStepLlm>;
+}> {
+  if (!hasOllamaKey()) return { intent: "open_goal" };
   try {
-    const content = await ollamaChat({
+    const { content, meta } = await ollamaChat({
       label: "classify_intent",
       system: `Classify a cooking request. Return ONLY JSON:
 {"intent":"known_dish"|"pantry_first"|"open_goal"}
@@ -52,10 +55,15 @@ async function classifyIntentLlm(goal: string): Promise<Intent> {
 - open_goal: other cooking goals`,
       user: goal,
     });
-    return parseLlmJson(content, intentSchema).intent;
+    try {
+      const intent = parseLlmJson(content, intentSchema).intent;
+      return { intent, llm: toStepLlm(meta, true) };
+    } catch {
+      return { intent: "open_goal", llm: toStepLlm(meta, false) };
+    }
   } catch (err) {
     console.warn("[agent] classify_intent LLM failed → open_goal", err);
-    return "open_goal";
+    return { intent: "open_goal" };
   }
 }
 
@@ -89,11 +97,18 @@ export async function classifyIntent(
     return intent;
   }
 
-  const intent = await classifyIntentLlm(ctx.goal);
-  appendStep(ctx, "classify_intent", { goal: ctx.goal }, {
-    intent,
-    source: "ollama",
-  });
+  const { intent, llm } = await classifyIntentLlm(ctx.goal);
+  appendStep(
+    ctx,
+    "classify_intent",
+    { goal: ctx.goal },
+    {
+      intent,
+      source: "ollama",
+    },
+    undefined,
+    llm,
+  );
   ctx.intent = intent;
   return intent;
 }

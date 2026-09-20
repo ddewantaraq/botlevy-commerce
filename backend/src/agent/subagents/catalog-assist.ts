@@ -47,7 +47,7 @@ export async function suggestProductTags(opts: {
 
   if (hasOllamaKey()) {
     try {
-      const content = await ollamaChat({
+      const { content } = await ollamaChat({
         label: "catalog_assist",
         system: `Suggest snake_case ingredient tags for a warung product so a cooking agent can match them. Return ONLY JSON:
 {"tags":["tag1","tag2"]}

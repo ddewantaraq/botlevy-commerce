@@ -62,7 +62,7 @@ async function classifyConfirmLlm(
 ): Promise<ConfirmIntent> {
   if (!hasOllamaKey()) return "unclear";
   try {
-    const content = await ollamaChat({
+    const { content } = await ollamaChat({
       label: "confirm_intent",
       temperature: 0,
       system: `Classify a short Indonesian/English confirmation utterance (often from speech recognition).

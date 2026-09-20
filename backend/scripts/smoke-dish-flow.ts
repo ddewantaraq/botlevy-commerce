@@ -51,7 +51,7 @@ async function main() {
 
   assert(extractDishName("soto ayam") === "Soto Ayam", "extract dish");
   assert(
-    parseBahanList("ayam, bawang putih, dan kunyit").includes("ayam"),
+    parseBahanList("ayam, bawang putih, dan kunyit").includes("chicken"),
     "parse bahan",
   );
   assert(
@@ -178,6 +178,7 @@ async function main() {
         "no_merchant keeps idle draft",
       );
     }
+  } else {
     // No gap → cookable immediately
     assert(turn.type === "run", `ya+no gap → run, got ${turn.type}`);
     if (turn.type === "run") {

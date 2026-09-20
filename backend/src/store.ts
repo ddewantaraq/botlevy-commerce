@@ -84,12 +84,24 @@ export type Quote = {
   expiresAt: string;
 };
 
+export type AgentStepLlm = {
+  label: string;
+  model: string;
+  system?: string;
+  user: string;
+  raw: string;
+  ms: number;
+  parseOk?: boolean;
+};
+
 export type AgentStep = {
   tool: string;
   args?: unknown;
   result?: unknown;
   error?: string;
   at: string;
+  /** Present when LLM_TRACE=1 and this step used the LLM. */
+  llm?: AgentStepLlm;
 };
 
 export type AgentIntent = "known_dish" | "pantry_first" | "open_goal";

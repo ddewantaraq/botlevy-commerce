@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { hasOllamaKey, ollamaChat } from "../llm/client.js";
+import { hasOllamaKey, ollamaChat, toStepLlm } from "../llm/client.js";
 import { extractJson } from "../llm/json.js";
 import type { Plan } from "../types.js";
 import { normalizeTag } from "./pantry.js";
@@ -117,20 +117,24 @@ function parseRecipeContent(content: string): Plan {
   return recipeSchema.parse(normalized);
 }
 
-async function repairRecipe(invalidSnippet: string, goal: string): Promise<Plan> {
-  const content = await ollamaChat({
+async function repairRecipe(
+  invalidSnippet: string,
+  goal: string,
+): Promise<{ plan: Plan; meta: import("../llm/client.js").LlmTraceMeta }> {
+  const { content, meta } = await ollamaChat({
     label: "plan_recipe_repair",
     system: `${SYSTEM_PROMPT}
 
 The previous JSON was invalid or incomplete. Fix it to match the schema exactly. Return ONLY the corrected JSON.`,
     user: `Goal: ${goal}\n\nBroken JSON:\n${invalidSnippet.slice(0, 2000)}`,
   });
-  return parseRecipeContent(content);
+  return { plan: parseRecipeContent(content), meta };
 }
 
 export async function toolPlanRecipe(goal: string): Promise<{
   plan: Plan;
   source: "ollama";
+  llm?: import("../llm/client.js").LlmStepPayload;
 }> {
   if (!hasOllamaKey()) {
     console.warn("[agent] plan_recipe: OLLAMA_API_KEY empty → fail");
@@ -138,31 +142,45 @@ export async function toolPlanRecipe(goal: string): Promise<{
   }
 
   let firstContent = "";
+  let firstMeta: import("../llm/client.js").LlmTraceMeta | undefined;
   try {
-    firstContent = await ollamaChat({
+    const first = await ollamaChat({
       label: "plan_recipe",
       system: SYSTEM_PROMPT,
       user: goal,
     });
+    firstContent = first.content;
+    firstMeta = first.meta;
     const parsed = parseRecipeContent(firstContent);
     console.log("[agent] plan_recipe: ollama ok", {
       dish: parsed.dish,
       ingredientTags: parsed.ingredients.map((i) => i.tag),
     });
-    return { plan: parsed, source: "ollama" };
+    return {
+      plan: parsed,
+      source: "ollama",
+      llm: toStepLlm(first.meta, true),
+    };
   } catch (err) {
     console.warn("[agent] plan_recipe first pass failed, trying repair:", err);
     try {
       const snippet = firstContent || String(err);
       const repaired = await repairRecipe(snippet, goal);
       console.log("[agent] plan_recipe: repair ok", {
-        dish: repaired.dish,
-        ingredientTags: repaired.ingredients.map((i) => i.tag),
+        dish: repaired.plan.dish,
+        ingredientTags: repaired.plan.ingredients.map((i) => i.tag),
       });
-      return { plan: repaired, source: "ollama" };
+      return {
+        plan: repaired.plan,
+        source: "ollama",
+        llm: toStepLlm(repaired.meta, true),
+      };
     } catch (repairErr) {
       console.warn("[agent] plan_recipe failed after repair:", repairErr);
-      throw new Error(RECIPE_TRY_AGAIN);
+      const fail = Object.assign(new Error(RECIPE_TRY_AGAIN), {
+        llm: firstMeta ? toStepLlm(firstMeta, false) : undefined,
+      }) as Error & { llm?: import("../llm/client.js").LlmStepPayload };
+      throw fail;
     }
   }
 }

@@ -10,12 +10,17 @@ const envCandidates = [
   path.resolve(process.cwd(), "../.env"),
 ];
 
+function envLoadStatus(error: Error | undefined): string {
+  if (!error) return "ok";
+  const code =
+    "code" in error && typeof error.code === "string" ? error.code : undefined;
+  return `miss (${code ?? error.message})`;
+}
+
 const keyBeforeLoad = process.env.OLLAMA_API_KEY ?? "";
 for (const envPath of envCandidates) {
   const result = loadEnv({ path: envPath });
-  console.log(
-    `[env] load ${envPath} → ${result.error ? `miss (${result.error.code})` : "ok"}`,
-  );
+  console.log(`[env] load ${envPath} → ${envLoadStatus(result.error)}`);
 }
 
 const schema = z.object({
@@ -32,6 +37,12 @@ const schema = z.object({
   OLLAMA_HOST: z.string().default("https://ollama.com"),
   OLLAMA_API_KEY: z.string().optional().default(""),
   OLLAMA_MODEL: z.string().default("qwen3.5"),
+  /** When true/1: log [llm_trace] JSON and persist LLM I/O on AgentStep. */
+  LLM_TRACE: z
+    .string()
+    .optional()
+    .default("")
+    .transform((v) => /^(1|true|yes|on)$/i.test(v.trim())),
   DEMO_PAYER_PRIVATE_KEY: z.string().optional().default(""),
 });
 

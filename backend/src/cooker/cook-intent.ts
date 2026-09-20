@@ -70,7 +70,7 @@ Do NOT return prep_free again.`
           : `
 Do NOT return prep_walk or prep_free unless phase is prep and mode-ask is pending (or free→walk switch); use unclear instead.`;
 
-    const content = await ollamaChat({
+    const { content } = await ollamaChat({
       label: "cook_intent",
       temperature: 0,
       system: `You classify short Indonesian/English kitchen-assistant utterances during meal prep, cooking, or post-cook wrap-up.
