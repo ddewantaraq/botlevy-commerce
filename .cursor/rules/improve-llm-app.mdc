@@ -1,0 +1,19 @@
+---
+description: >-
+  When evaluating or changing LLM prompts, models, agents, RAG, tools, or evals,
+  use the improve-llm-app skill (AI Hero staircase + evals first).
+alwaysApply: false
+globs: "**/agent/**,**/llm/**,**/prompts/**,**/prompt/**,**/evals/**,**/eval/**,**/rag/**,**/cooker/**"
+---
+
+# Improve LLM apps (AI Hero)
+
+When working on LLM-powered behavior (prompts, model choice, agents, tools, RAG, structured outputs, or evals):
+
+1. Read and follow [`.cursor/skills/improve-llm-app/SKILL.md`](../skills/improve-llm-app/SKILL.md).
+2. Define measurable success criteria and a baseline before changing the system.
+3. Prefer the simplest staircase technique that fits; do not jump to RAG, open agents, or fine-tuning without exhausting simpler steps.
+4. Re-run evals after changes; do not claim improvement without measurement.
+5. In this repo: discover [`backend/evals/`](../../backend/evals/) for golden pass %, and use `LLM_TRACE` / Agent steps (see [`docs/LLM-EVALS-OBS.md`](../../docs/LLM-EVALS-OBS.md)) to capture failure modes before climbing the staircase.
+
+Full technique list and eval types: skill refs `techniques.md`, `evals.md`, `SOURCE.md` (AI Hero).

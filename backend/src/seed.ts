@@ -23,12 +23,12 @@ export const AYAM_SEMUR_FALLBACK = {
   ],
   ingredients: [
     { tag: "chicken", name: "Chicken pieces", qty: 500, unit: "g" },
-    { tag: "shallot", name: "Shallots", qty: 5, unit: "pcs" },
-    { tag: "kecap_manis", name: "Kecap manis", qty: 3, unit: "tbsp" },
-    { tag: "nutmeg", name: "Nutmeg", qty: 1, unit: "tsp" },
-    { tag: "potato", name: "Potato", qty: 2, unit: "pcs" },
-    { tag: "cooking_oil", name: "Cooking oil", qty: 2, unit: "tbsp" },
-    { tag: "salt", name: "Salt", qty: 1, unit: "tsp" },
+    { tag: "shallot", name: "Shallots", qty: 5, unit: "biji" },
+    { tag: "kecap_manis", name: "Kecap manis", qty: 3, unit: "sdm" },
+    { tag: "nutmeg", name: "Nutmeg", qty: 1, unit: "sdt" },
+    { tag: "potato", name: "Potato", qty: 2, unit: "biji" },
+    { tag: "cooking_oil", name: "Cooking oil", qty: 2, unit: "sdm" },
+    { tag: "salt", name: "Salt", qty: 1, unit: "sdt" },
   ],
 };
 
@@ -50,35 +50,35 @@ export function seedIfEmpty(defaultPayTo = "0x0000000000000000000000000000000000
     {
       id: newId("prod"),
       merchantId,
-      name: "Chicken pieces",
-      unit: "g",
-      price: 45_000, // 0.045 mUSDC per g? Use pack prices instead
-      stock: 50,
+      name: "Ayam (per kg)",
+      unit: "kg",
+      price: 5_000_000,
+      stock: 30,
       tags: ["chicken", "chicken_thigh"],
     },
     {
       id: newId("prod"),
       merchantId,
-      name: "Shallots (bundle)",
-      unit: "pcs",
-      price: 2_000_000, // 2 mUSDC
+      name: "Bawang merah",
+      unit: "g",
+      price: 2_000,
       stock: 0, // OOS → substitute onion
       tags: ["shallot"],
     },
     {
       id: newId("prod"),
       merchantId,
-      name: "Onion (bundle)",
-      unit: "pcs",
-      price: 1_500_000,
+      name: "Bawang bombay",
+      unit: "g",
+      price: 1_500,
       stock: 40,
       tags: ["onion"],
     },
     {
       id: newId("prod"),
       merchantId,
-      name: "Kecap manis bottle",
-      unit: "tbsp",
+      name: "Kecap manis",
+      unit: "sdm",
       price: 500_000,
       stock: 100,
       tags: ["kecap_manis"],
@@ -86,8 +86,8 @@ export function seedIfEmpty(defaultPayTo = "0x0000000000000000000000000000000000
     {
       id: newId("prod"),
       merchantId,
-      name: "Nutmeg",
-      unit: "tsp",
+      name: "Pala",
+      unit: "sdt",
       price: 300_000,
       stock: 80,
       tags: ["nutmeg"],
@@ -95,8 +95,8 @@ export function seedIfEmpty(defaultPayTo = "0x0000000000000000000000000000000000
     {
       id: newId("prod"),
       merchantId,
-      name: "Potato",
-      unit: "pcs",
+      name: "Kentang",
+      unit: "kg",
       price: 800_000,
       stock: 60,
       tags: ["potato", "sweet_potato"],
@@ -104,8 +104,8 @@ export function seedIfEmpty(defaultPayTo = "0x0000000000000000000000000000000000
     {
       id: newId("prod"),
       merchantId,
-      name: "Cooking oil",
-      unit: "tbsp",
+      name: "Minyak goreng",
+      unit: "ml",
       price: 200_000,
       stock: 200,
       tags: ["cooking_oil"],
@@ -113,23 +113,13 @@ export function seedIfEmpty(defaultPayTo = "0x0000000000000000000000000000000000
     {
       id: newId("prod"),
       merchantId,
-      name: "Salt pack",
-      unit: "tsp",
+      name: "Garam",
+      unit: "g",
       price: 100_000,
       stock: 200,
       tags: ["salt"],
     },
   ];
-
-  // Fix chicken to pack price (~5 mUSDC for 500g portion unit sold as pack)
-  products[0] = {
-    ...products[0],
-    name: "Chicken pack (500g)",
-    unit: "pack",
-    price: 5_000_000,
-    stock: 30,
-    tags: ["chicken", "chicken_thigh"],
-  };
 
   resetCatalogFromSeed({ merchants, products });
 }

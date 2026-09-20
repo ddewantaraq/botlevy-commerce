@@ -2,12 +2,20 @@
   "name": "botlevy-commerce",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["backend", "frontend"],
+  "workspaces": [
+    "backend",
+    "cooker-ui",
+    "merchant-ui",
+    "packages/commerce-shared"
+  ],
   "scripts": {
-    "dev": "npm run dev --workspace=backend & npm run dev --workspace=frontend",
+    "dev": "npm run dev:backend & npm run dev:cooker & npm run dev:merchant",
     "dev:backend": "npm run dev --workspace=backend",
-    "dev:frontend": "npm run dev --workspace=frontend",
-    "demo:agent": "npm run demo:agent --workspace=backend"
+    "dev:cooker": "npm run dev --workspace=cooker-ui",
+    "dev:merchant": "npm run dev --workspace=merchant-ui",
+    "dev:frontend": "npm run dev:cooker",
+    "demo:agent": "npm run demo:agent --workspace=backend",
+    "smoke:orchestrator": "npm run smoke:orchestrator --workspace=backend"
   },
   "engines": {
     "node": ">=22"

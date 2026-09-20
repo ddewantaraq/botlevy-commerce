@@ -1,0 +1,50 @@
+[
+  {
+    "id": "rules-pantry-first-id",
+    "goal": "cuma punya daging sapi dan bawang, enak masak apa ya?",
+    "expectedIntent": "pantry_first",
+    "mode": "rules"
+  },
+  {
+    "id": "rules-pantry-first-en",
+    "goal": "what can I cook with chicken and onion",
+    "expectedIntent": "pantry_first",
+    "mode": "rules"
+  },
+  {
+    "id": "rules-known-dish-masak",
+    "goal": "Saya mau masak ayam semur",
+    "expectedIntent": "known_dish",
+    "mode": "rules"
+  },
+  {
+    "id": "rules-bare-dish",
+    "goal": "soto ayam",
+    "expectedIntent": "known_dish",
+    "mode": "rules"
+  },
+  {
+    "id": "rules-cook-rendang",
+    "goal": "cook beef rendang tonight",
+    "expectedIntent": "known_dish",
+    "mode": "rules"
+  },
+  {
+    "id": "rules-empty",
+    "goal": "   ",
+    "expectedIntent": "open_goal",
+    "mode": "rules"
+  },
+  {
+    "id": "llm-ambiguous-dinner",
+    "goal": "something warm for dinner please",
+    "expectedIntent": "open_goal",
+    "mode": "llm"
+  },
+  {
+    "id": "llm-pantry-soft",
+    "goal": "I only have eggs and rice at home",
+    "expectedIntent": "pantry_first",
+    "mode": "llm"
+  }
+]

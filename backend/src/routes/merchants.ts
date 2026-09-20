@@ -14,6 +14,8 @@ import {
   upsertMerchant,
   upsertProduct,
 } from "../store.js";
+import { suggestProductTags } from "../agent/subagents/catalog-assist.js";
+import { isMerchantUnit, MERCHANT_UNITS, normalizeUnit } from "../units.js";
 
 export const merchantsRouter = Router();
 
@@ -25,6 +27,11 @@ merchantsRouter.get("/", (_req, res) => {
       productCount: listProducts(m.id).length,
     })),
   });
+});
+
+/** Measurable units allowed on merchant products. */
+merchantsRouter.get("/units", (_req, res) => {
+  res.json({ ok: true, units: [...MERCHANT_UNITS] });
 });
 
 const profileSchema = z.object({
@@ -66,7 +73,12 @@ merchantsRouter.patch(
 const productSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
-  unit: z.string().min(1),
+  unit: z
+    .string()
+    .min(1)
+    .refine((u) => isMerchantUnit(u), {
+      message: `unit must be one of: ${MERCHANT_UNITS.join(", ")}`,
+    }),
   price: z.number().int().nonnegative(),
   stock: z.number().int().nonnegative(),
   tags: z.array(z.string()).min(1),
@@ -98,6 +110,30 @@ merchantsRouter.get(
   },
 );
 
+const suggestTagsSchema = z.object({
+  name: z.string().min(1).max(120),
+  notes: z.string().max(200).optional(),
+});
+
+merchantsRouter.post(
+  "/suggest-tags",
+  requireMerchant,
+  async (req: AuthedRequest, res) => {
+    const parsed = suggestTagsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ ok: false, errors: parsed.error.flatten() });
+      return;
+    }
+    try {
+      const result = await suggestProductTags(parsed.data);
+      res.json({ ok: true, tags: result.tags, source: result.source });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Suggest tags failed";
+      res.status(500).json({ ok: false, message });
+    }
+  },
+);
+
 merchantsRouter.post(
   "/me/products",
   requireMerchant,
@@ -116,7 +152,7 @@ merchantsRouter.post(
       id: parsed.data.id ?? newId("prod"),
       merchantId: merchant.id,
       name: parsed.data.name,
-      unit: parsed.data.unit,
+      unit: normalizeUnit(parsed.data.unit),
       price: parsed.data.price,
       stock: parsed.data.stock,
       tags: parsed.data.tags.map((t) => t.toLowerCase()),

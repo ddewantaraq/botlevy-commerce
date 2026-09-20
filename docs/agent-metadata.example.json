@@ -1,0 +1,17 @@
+{
+  "name": "Botlevy CommerceAgent",
+  "description": "Cooking commerce agent: pantry → recipe → warung quote → MockUSDC pay on BSC Testnet. Public runs via x402; in-app cooker uses SIWE.",
+  "image": "https://botlevy.example/icon.png",
+  "services": [
+    {
+      "name": "public-runs",
+      "endpoint": "https://YOUR_API_HOST/agent/public/runs",
+      "version": "1.0"
+    }
+  ],
+  "chainId": 97,
+  "x402": {
+    "network": "eip155:97",
+    "token": "MockUSDC"
+  }
+}

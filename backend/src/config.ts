@@ -10,18 +10,24 @@ const envCandidates = [
   path.resolve(process.cwd(), "../.env"),
 ];
 
+function envLoadStatus(error: Error | undefined): string {
+  if (!error) return "ok";
+  const code =
+    "code" in error && typeof error.code === "string" ? error.code : undefined;
+  return `miss (${code ?? error.message})`;
+}
+
 const keyBeforeLoad = process.env.OLLAMA_API_KEY ?? "";
 for (const envPath of envCandidates) {
   const result = loadEnv({ path: envPath });
-  console.log(
-    `[env] load ${envPath} → ${result.error ? `miss (${result.error.code})` : "ok"}`,
-  );
+  console.log(`[env] load ${envPath} → ${envLoadStatus(result.error)}`);
 }
 
 const schema = z.object({
   PORT: z.coerce.number().default(4100),
   SESSION_SECRET: z.string().min(16).default("dev-session-secret-change-me"),
-  FRONTEND_URL: z.string().url().default("http://localhost:5174"),
+  COOKER_URL: z.string().default("http://localhost:5174"),
+  MERCHANT_URL: z.string().default("http://localhost:5175"),
   CHAIN_ID: z.coerce.number().default(97),
   BSC_RPC_URL: z
     .string()
@@ -31,10 +37,28 @@ const schema = z.object({
   OLLAMA_HOST: z.string().default("https://ollama.com"),
   OLLAMA_API_KEY: z.string().optional().default(""),
   OLLAMA_MODEL: z.string().default("qwen3.5"),
+  /** When true/1: log [llm_trace] JSON and persist LLM I/O on AgentStep. */
+  LLM_TRACE: z
+    .string()
+    .optional()
+    .default("")
+    .transform((v) => /^(1|true|yes|on)$/i.test(v.trim())),
   DEMO_PAYER_PRIVATE_KEY: z.string().optional().default(""),
 });
 
 export const env = schema.parse(process.env);
+
+/** Allowed browser origins for CORS (cooker + merchant UIs). */
+export function uiOrigins(): string[] {
+  return [...new Set([env.COOKER_URL, env.MERCHANT_URL].filter(Boolean))];
+}
+
+/** Cookie Secure flag when either UI is served over HTTPS. */
+export function cookieSecure(): boolean {
+  return (
+    env.COOKER_URL.startsWith("https") || env.MERCHANT_URL.startsWith("https")
+  );
+}
 
 /** Safe debug snapshot — never logs the full API key. */
 export function debugOllamaEnv() {

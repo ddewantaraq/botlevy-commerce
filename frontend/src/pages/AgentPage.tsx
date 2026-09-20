@@ -51,9 +51,15 @@ export function AgentPage() {
   const { signMessageAsync } = useSignMessage();
   const [goal, setGoal] = useState("I want to cook ayam semur tonight");
   const [pantry, setPantry] = useState<string[]>([]);
+  const [selectedDish, setSelectedDish] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [steps, setSteps] = useState<Step[]>([]);
+  const [status, setStatus] = useState("");
+  const [intent, setIntent] = useState("");
+  const [suggestions, setSuggestions] = useState<
+    Array<{ dish: string; reason: string; ingredientsPreview?: string[] }>
+  >([]);
   const [plan, setPlan] = useState<{ dish: string; steps: string[]; ingredients: unknown[] } | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [orderId, setOrderId] = useState("");
@@ -122,20 +128,30 @@ export function AgentPage() {
     setError("");
     setOrderId("");
     setExplorerUrl("");
+    setSuggestions([]);
+    setQuote(null);
+    setPlan(null);
     try {
       const res = await fetch(`${API_URL}/agent/runs`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goal, pantry }),
+        body: JSON.stringify({
+          goal,
+          pantry,
+          ...(selectedDish.trim() ? { selectedDish: selectedDish.trim() } : {}),
+        }),
       });
       const data = await res.json();
+      setSteps(data.steps ?? []);
+      setStatus(data.status ?? "");
+      setIntent(data.intent ?? "");
+      setSuggestions(data.suggestions ?? []);
+      setPlan(data.plan ?? null);
+      setQuote(data.quote ?? null);
       if (!res.ok || !data.ok) {
         throw new Error(data.message || "Agent run failed");
       }
-      setSteps(data.steps ?? []);
-      setPlan(data.plan ?? null);
-      setQuote(data.quote ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -280,6 +296,16 @@ export function AgentPage() {
           </div>
         </div>
 
+        <label className="block text-sm font-medium text-[#1a1a17]">
+          Selected dish (optional — after pantry suggestions)
+          <input
+            value={selectedDish}
+            onChange={(e) => setSelectedDish(e.target.value)}
+            placeholder="e.g. Tumis daging sapi bawang"
+            className="mt-1 w-full rounded-md border border-[#e7e7e0] bg-transparent px-3 py-2 text-sm"
+          />
+        </label>
+
         <button
           type="button"
           disabled={busy || !goal.trim() || !signedIn}
@@ -297,6 +323,46 @@ export function AgentPage() {
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </p>
+      ) : null}
+
+      {status ? (
+        <p className="text-sm text-[#4a4a44]">
+          Status: <strong className="text-[#0f766e]">{status}</strong>
+          {intent ? (
+            <>
+              {" "}
+              · Intent: <strong>{intent}</strong>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+
+      {suggestions.length > 0 ? (
+        <section className="rounded-xl border border-[#e7e7e0] bg-white/60 p-5">
+          <h2 className="text-lg font-semibold text-[#1a1a17]">Menu suggestions</h2>
+          <ul className="mt-3 space-y-2 text-sm">
+            {suggestions.map((s) => (
+              <li key={s.dish} className="rounded-md border border-[#e7e7e0] px-3 py-2">
+                <button
+                  type="button"
+                  className="text-left font-medium text-[#0f766e] underline"
+                  onClick={() => setSelectedDish(s.dish)}
+                >
+                  {s.dish}
+                </button>
+                <p className="text-xs text-[#6f6f66]">{s.reason}</p>
+                {s.ingredientsPreview?.length ? (
+                  <p className="font-mono text-xs text-[#4a4a44]">
+                    {s.ingredientsPreview.join(", ")}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-[#6f6f66]">
+            Click a dish to fill Selected dish, then run again to get a quote.
+          </p>
+        </section>
       ) : null}
 
       {steps.length > 0 ? (

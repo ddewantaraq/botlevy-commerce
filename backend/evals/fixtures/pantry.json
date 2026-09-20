@@ -1,0 +1,26 @@
+[
+  {
+    "id": "heuristic-beef-onion",
+    "goal": "cuma punya daging sapi dan bawang bombay",
+    "chips": [],
+    "expectTagsInclude": ["beef", "onion"]
+  },
+  {
+    "id": "heuristic-chicken-garlic",
+    "goal": "ada ayam dan bawang putih",
+    "chips": [],
+    "expectTagsInclude": ["chicken", "garlic"]
+  },
+  {
+    "id": "chips-merge",
+    "goal": "hello",
+    "chips": ["salt", "cooking_oil"],
+    "expectTagsInclude": ["salt", "cooking_oil"]
+  },
+  {
+    "id": "heuristic-potato",
+    "goal": "punya kentang aja",
+    "chips": [],
+    "expectTagsInclude": ["potato"]
+  }
+]

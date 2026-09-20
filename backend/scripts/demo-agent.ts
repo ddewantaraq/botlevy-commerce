@@ -55,11 +55,16 @@ async function main() {
     pantry: ["salt"],
   });
   console.log("   runId:", run.id);
+  console.log("   status:", run.status, "intent:", run.intent);
   console.log(
     "   steps:",
     run.steps.map((s) => s.tool).join(" → "),
   );
-  if (!run.quote) throw new Error("Agent did not produce a quote");
+  if (run.status !== "quoted" || !run.quote) {
+    throw new Error(
+      `Agent did not produce a quote (status=${run.status}). Ensure a merchant with real payTo has matching stock.`,
+    );
+  }
   console.log("   quote:", run.quote.id, "total=", run.quote.total);
 
   const merchant = getMerchant(run.quote.merchantId);
