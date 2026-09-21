@@ -6,7 +6,7 @@ Host **backend** on Railway and **cooker-ui** / **merchant-ui** on Vercel (HTTPS
 
 | Service | Host | Notes |
 |---------|------|-------|
-| API (`backend`) | Railway | Node 22, `PORT`, listen `0.0.0.0`, [`railway.toml`](./railway.toml) |
+| API (`backend`) | Railway | Node 22, `PORT`, listen `0.0.0.0`, [`railway.toml`](./railway.toml); region Singapore (`asia-southeast1`) via Railway dashboard/MCP — not in `railway.toml` |
 | Cooker | Vercel | Root `cooker-ui/`, path ignore script |
 | Merchant | Vercel | Root `merchant-ui/`, path ignore script |
 
@@ -102,9 +102,10 @@ Use existing **Railway** and **Vercel** MCP tools to list/create services, set v
 | Railway CORS | `COOKER_URL=https://botlevy-cooker.vercel.app`, `MERCHANT_URL=https://botlevy-merchant.vercel.app` |
 | Railway secrets set | `SESSION_SECRET`, `OLLAMA_API_KEY`, `MOCK_USDC_ADDRESS` (plus public chain/Ollama/PORT vars) |
 | Railway build/start/watch | Applied via MCP `update-service` + [`railway.toml`](./railway.toml) on Git deploy |
+| Railway region | Singapore `asia-southeast1-eqsg3a`, 1 replica (dashboard/MCP — not configurable in `railway.toml`) |
 | Vercel `botlevy-cooker` | Live: https://botlevy-cooker.vercel.app (`prj_muoQTpfuSjievmWhR94QzMhi4seu`); Vite, Node 22, root `cooker-ui`; `VITE_*` set |
 | Vercel `botlevy-merchant` | Live: https://botlevy-merchant.vercel.app (`prj_2sZqwbAJzeEcs6bwrzfjTOinjMHU`); Vite, Node 22, root `merchant-ui`; `VITE_*` set |
-| Path ignore scripts | Cleared on Vercel until `scripts/vercel-ignore-*.sh` land on `main` (re-enable after merging Track B) |
+| Path ignore scripts | Enabled on both Vercel projects (`bash ../scripts/vercel-ignore-cooker.sh` / `vercel-ignore-merchant.sh`) |
 
 ## Smoke after deploy
 

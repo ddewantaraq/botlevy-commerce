@@ -16,6 +16,9 @@ seedIfEmpty();
 
 const origins = uiOrigins();
 const app = express();
+// Railway (and other reverse proxies) set X-Forwarded-For; required for
+// express-rate-limit to key per client IP (ERR_ERL_UNEXPECTED_X_FORWARDED_FOR).
+app.set("trust proxy", 1);
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
   cors({
