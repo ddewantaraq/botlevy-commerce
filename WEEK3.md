@@ -26,17 +26,17 @@ flowchart TB
 
 ## Track A — Smart contract security
 
-Current [`contracts/MockUSDC.sol`](./contracts/MockUSDC.sol): historically **open `mint`** (anyone). Week 3 must gate mint.
+[`contracts/MockUSDC.sol`](./contracts/MockUSDC.sol) now inherits **OpenZeppelin v5.7.0** `ERC20` + `Ownable` + `Pausable`. `mint` / `burn` / `pause` are **owner-only**. Pay still uses `transfer`. **Redeploy on chain 97 is still required** — an old open-mint address does not pick up this code.
 
 ### Changes
 
-1. Ownable + Pausable pattern (OpenZeppelin or equivalent inlined for Remix).
-2. `mint(to, amount)` — **`onlyOwner`** only.
-3. Optional owner-only `burn` for test cleanup.
+1. OpenZeppelin Ownable + Pausable (Remix GitHub import, not inlined).
+2. `mint(to, amount)` — **`onlyOwner`** + not paused.
+3. Owner-only `burn` for cleanup (not used by cooker pay; no dollar reserves).
 4. Keep **6 decimals**, name/symbol Mock USDC / mUSDC so cooker pay path unchanged.
 5. Pin Solidity **0.8.37**.
-6. Redeploy on **BSC Testnet 97** via Remix; update `MOCK_USDC_ADDRESS` / `VITE_MOCK_USDC_ADDRESS` in [`.env.example`](./.env.example) + hosted env.
-7. Update [`contracts/README.md`](./contracts/README.md) + [`INSTRUCTIONS.md`](./INSTRUCTIONS.md): mint only from owner wallet; never mainnet.
+6. Redeploy on **BSC Testnet 97** via Remix; set `MOCK_USDC_ADDRESS` / `VITE_MOCK_USDC_ADDRESS` in local `.env` (`.env.example` stays blank).
+7. Docs: [`contracts/README.md`](./contracts/README.md) + [`INSTRUCTIONS.md`](./INSTRUCTIONS.md) — mint only from owner wallet; never mainnet.
 
 ### Exit
 

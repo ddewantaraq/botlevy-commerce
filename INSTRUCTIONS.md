@@ -72,6 +72,8 @@ OLLAMA_MODEL=qwen3.5
 
 ## 4) Deploy MockUSDC on Remix
 
+Testnet **97** only. Never mainnet. The contract uses OpenZeppelin `Ownable` + `Pausable`: the **deployer is owner**. Only that wallet can mint.
+
 1. Open https://remix.ethereum.org/  
 2. Create `MockUSDC.sol` — copy from [`contracts/MockUSDC.sol`](./contracts/MockUSDC.sol).  
 3. Solidity Compiler settings:
@@ -79,32 +81,32 @@ OLLAMA_MODEL=qwen3.5
    - Enable optimization: **On**, runs **200**
    - EVM version: **default**
    - Leave **via IR** off  
-   Then **Compile**.  
+   Then **Compile** (Remix loads `@openzeppelin/contracts@5.7.0`).  
 4. Deploy & Run → Environment **Injected Provider - MetaMask**.  
-5. Switch MetaMask to **BSC Testnet (97)** and the wallet that pays gas for deploy (either is fine).  
+5. Switch MetaMask to **BSC Testnet (97)** and the **owner** wallet (this account will be the only minter).  
 6. Deploy → confirm → **copy contract address**.
 
-Put the address in `.env`:
+Put the address in `.env` (leave `.env.example` empty):
 
 ```env
 MOCK_USDC_ADDRESS=0xYourContract
 VITE_MOCK_USDC_ADDRESS=0xYourContract
 ```
 
-### Mint to the payer (6 decimals)
+### Mint to the payer (owner only, 6 decimals)
 
-In Remix → deployed contract → `mint`:
+In Remix, still connected as **owner** → `mint`:
 
-- `to` = **payer** address  
+- `to` = **payer** (cooker) address  
 - `amount` = `100000000` → **100** mUSDC  
 
-Optional: mint a little to merchant for testing.
+Optional: mint a little to merchant for testing. A non-owner calling `mint` must revert.
 
 **MetaMask:** Import tokens → paste contract → decimals **6**.
 
 **Check:** Payer shows mUSDC balance; mint tx appears on https://testnet.bscscan.com/
 
-More detail: [`contracts/README.md`](./contracts/README.md).
+More detail (pause, burn, OpenZeppelin imports): [`contracts/README.md`](./contracts/README.md).
 
 ---
 
@@ -202,7 +204,7 @@ npm run demo:agent
 | SIWE “Wrong chain” | MetaMask → BSC Testnet, chain ID **97** |
 | Pay tx fails / no gas | Fund payer with tBNB faucet |
 | “MOCK_USDC_ADDRESS is not configured” | Set both `MOCK_USDC_*` and `VITE_MOCK_USDC_*`, restart Vite |
-| “Insufficient mUSDC” / transfer revert | Remix `mint` to **payer**, decimals 6 |
+| “Insufficient mUSDC” / transfer revert | **Owner** Remix `mint` to **payer**, decimals 6 (non-owner mint reverts) |
 | “No MockUSDC Transfer…” | Wrong token address, wrong `payTo`, or tx not mined yet |
 | Agent plan always ayam semur | Missing/invalid `OLLAMA_API_KEY`, Free quota, or model not allowed — commerce tools still run |
 | Merchant products empty | SIWE with a fresh wallet before seed claim; or delete `backend/data/runtime.json` and restart API so seed reloads, then SIWE again |
