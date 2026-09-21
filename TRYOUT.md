@@ -22,8 +22,8 @@ Use this after deploy ([`DEPLOY.md`](./DEPLOY.md)). Testnet only (BSC **97**).
 
 1. MetaMask → BSC Testnet (97). RPC: `https://data-seed-prebsc-1-s1.bnbchain.org:8545`.
 2. Faucet tBNB: https://www.bnbchain.org/en/testnet-faucet  
-3. Deploy / use hardened MockUSDC — see [`contracts/README.md`](./contracts/README.md).  
-4. **Owner** mints to cooker, e.g. `100000000` = 100 mUSDC (6 decimals).  
+3. Deploy hardened MockUSDC (OpenZeppelin, owner-only mint) — see [`contracts/README.md`](./contracts/README.md). Do not reuse an old open-mint address.  
+4. **Owner** (deployer wallet) mints to cooker, e.g. `100000000` = 100 mUSDC (6 decimals). Other wallets cannot mint.  
 5. Cooker + merchant: Import token = MockUSDC address, decimals **6**.
 
 ## Merchant path

@@ -50,8 +50,8 @@ app.use("/agent", agentRouter);
 app.use("/orders", ordersRouter);
 app.use("/cooker", cookerRouter);
 
-app.listen(env.PORT, () => {
-  console.log(`[botlevy-commerce] API http://localhost:${env.PORT}`);
+app.listen(env.PORT, "0.0.0.0", () => {
+  console.log(`[botlevy-commerce] API http://0.0.0.0:${env.PORT}`);
   console.log(`[botlevy-commerce] chainId=${env.CHAIN_ID} merchants=${listMerchants().length}`);
   console.log(`[botlevy-commerce] CORS`, origins);
   console.log("[botlevy-commerce] ollama debug", debugOllamaEnv());

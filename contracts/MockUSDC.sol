@@ -1,55 +1,47 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.37;
 
+import {ERC20} from "@openzeppelin/contracts@5.7.0/token/ERC20/ERC20.sol";
+import {Ownable} from "@openzeppelin/contracts@5.7.0/access/Ownable.sol";
+import {Pausable} from "@openzeppelin/contracts@5.7.0/utils/Pausable.sol";
+
 /**
- * MockUSDC — testnet-only ERC-20 with 6 decimals and open mint.
- * Deploy on BNB Smart Chain Testnet (chainId 97) via Remix.
+ * MockUSDC — testnet-only ERC-20 (6 decimals).
+ * Deploy on BNB Smart Chain Testnet (chainId 97) via Remix. Never mainnet.
+ *
+ * Deployer is owner. Only the owner can mint or burn. Pause stops transfers
+ * (including mint/burn) without taking anyone's keys.
+ * Cooker pay uses standard transfer — not mint/burn.
  */
-contract MockUSDC {
-    string public name = "Mock USDC";
-    string public symbol = "mUSDC";
-    uint8 public decimals = 6;
-    uint256 public totalSupply;
+contract MockUSDC is ERC20, Ownable, Pausable {
+    constructor() ERC20("Mock USDC", "mUSDC") Ownable(msg.sender) {}
 
-    mapping(address => uint256) public balanceOf;
-    mapping(address => mapping(address => uint256)) public allowance;
-
-    event Transfer(address indexed from, address indexed to, uint256 value);
-    event Approval(address indexed owner, address indexed spender, uint256 value);
-
-    function mint(address to, uint256 amount) external {
-        require(to != address(0), "mint to zero");
-        totalSupply += amount;
-        balanceOf[to] += amount;
-        emit Transfer(address(0), to, amount);
+    function decimals() public pure override returns (uint8) {
+        return 6;
     }
 
-    function transfer(address to, uint256 amount) external returns (bool) {
-        _transfer(msg.sender, to, amount);
-        return true;
+    function mint(address to, uint256 amount) external onlyOwner whenNotPaused {
+        _mint(to, amount);
     }
 
-    function approve(address spender, uint256 amount) external returns (bool) {
-        allowance[msg.sender][spender] = amount;
-        emit Approval(msg.sender, spender, amount);
-        return true;
+    /// Owner cleanup / issuer-style destroy. Not used by the cooker pay path.
+    function burn(address from, uint256 amount) external onlyOwner {
+        _burn(from, amount);
     }
 
-    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
-        uint256 allowed = allowance[from][msg.sender];
-        require(allowed >= amount, "allowance");
-        if (allowed != type(uint256).max) {
-            allowance[from][msg.sender] = allowed - amount;
-        }
-        _transfer(from, to, amount);
-        return true;
+    function pause() external onlyOwner {
+        _pause();
     }
 
-    function _transfer(address from, address to, uint256 amount) internal {
-        require(to != address(0), "transfer to zero");
-        require(balanceOf[from] >= amount, "balance");
-        balanceOf[from] -= amount;
-        balanceOf[to] += amount;
-        emit Transfer(from, to, amount);
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    function _update(address from, address to, uint256 value)
+        internal
+        override
+        whenNotPaused
+    {
+        super._update(from, to, value);
     }
 }

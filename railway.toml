@@ -1,0 +1,17 @@
+# Railway — backend only (path-filtered Git deploys on main)
+[build]
+builder = "NIXPACKS"
+watchPatterns = [
+  "/backend/**",
+  "/package.json",
+  "/package-lock.json",
+  "/railway.toml",
+]
+buildCommand = "npm install && npm run build --workspace=@botlevy-commerce/backend"
+
+[deploy]
+startCommand = "npm start --workspace=@botlevy-commerce/backend"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
