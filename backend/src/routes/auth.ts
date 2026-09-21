@@ -82,10 +82,12 @@ authRouter.post("/verify", async (req, res) => {
 
     const sessionId = crypto.randomBytes(32).toString("hex");
     createSession(sessionId, address, role);
+    const secure = cookieSecure();
     res.cookie("sid", sessionId, {
       httpOnly: true,
-      secure: cookieSecure(),
-      sameSite: "lax",
+      secure,
+      // Cross-origin HTTPS UIs need SameSite=None; localhost keeps lax.
+      sameSite: secure ? "none" : "lax",
       maxAge: 60 * 60 * 1000,
     });
 
@@ -110,6 +112,11 @@ authRouter.get("/me", (req, res) => {
 authRouter.post("/logout", (req, res) => {
   const sid = req.cookies?.sid as string | undefined;
   if (sid) deleteSession(sid);
-  res.clearCookie("sid");
+  const secure = cookieSecure();
+  res.clearCookie("sid", {
+    httpOnly: true,
+    secure,
+    sameSite: secure ? "none" : "lax",
+  });
   res.json({ ok: true });
 });
