@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@botlevy-commerce/shared": "*",
+    "@metamask/connect-evm": "^2.1.1",
     "@tanstack/react-query": "^5.64.0",
     "buffer": "^6.0.3",
     "react": "^19.1.0",

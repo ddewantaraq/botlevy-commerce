@@ -162,7 +162,8 @@ function ttsLangFor(lang: "id" | "en"): string {
 
 export function CookerChatPage() {
   const { address, isConnected, chainId } = useAccount();
-  const { connect, connectors } = useConnect();
+  const { connect, connectors, error: connectError, isPending: connecting } =
+    useConnect();
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
   const { signMessageAsync } = useSignMessage();
@@ -202,6 +203,8 @@ export function CookerChatPage() {
   const messagesRef = useRef<ChatMessage[]>(messages);
   const recRef = useRef<ReturnType<typeof createSpeechRecognition>>(null);
   const rearmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const browserHintShownRef = useRef(false);
   const pendingCookStartRef = useRef<{
     reply: string;
     speak?: string;
@@ -344,6 +347,71 @@ export function CookerChatPage() {
     return handsFreeRef.current || pendingHandsFreeAskRef.current;
   }
 
+  function releaseMicStream() {
+    const stream = micStreamRef.current;
+    if (!stream) return;
+    for (const track of stream.getTracks()) {
+      try {
+        track.stop();
+      } catch {
+        /* ignore */
+      }
+    }
+    micStreamRef.current = null;
+  }
+
+  function maybeShowBrowserVoiceHint() {
+    if (browserHintShownRef.current || typeof navigator === "undefined") return;
+    const ua = navigator.userAgent || "";
+    const likelyMetaMask = /MetaMaskMobile/i.test(ua) || /MetaMask/i.test(ua);
+    const noTts =
+      typeof window !== "undefined" && !window.speechSynthesis;
+    if (!likelyMetaMask && !noTts) return;
+    browserHintShownRef.current = true;
+    const text =
+      replyLangRef.current === "en"
+        ? "Tip: agent voice + hands-free mic work best in Chrome or the installed PWA (MetaMask’s in-app browser is limited)."
+        : "Tips: suara agent + hands-free mic lebih lancar di Chrome atau PWA terpasang (browser dalam MetaMask terbatas).";
+    push({ role: "agent", text, kind: "text" });
+  }
+
+  function canGetUserMedia(): boolean {
+    return (
+      typeof navigator !== "undefined" &&
+      typeof navigator.mediaDevices?.getUserMedia === "function"
+    );
+  }
+
+  /**
+   * Request mic once on a user gesture and hold the MediaStream for the
+   * hands-free phase so WebViews (e.g. MetaMask) do not re-prompt every
+   * SpeechRecognition restart.
+   */
+  async function ensureMicPermission(): Promise<boolean> {
+    if (micStreamRef.current?.active) return true;
+    if (!canGetUserMedia()) {
+      // Desktop Chrome can still use SpeechRecognition without a held stream.
+      return true;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStreamRef.current = stream;
+      return true;
+    } catch {
+      setHandsFree(false);
+      handsFreeRef.current = false;
+      setPendingHandsFreeAsk(false);
+      pendingHandsFreeAskRef.current = false;
+      stopMicInternal();
+      setError(
+        replyLangRef.current === "en"
+          ? "Allow the microphone once to use hands-free (or type instead)."
+          : "Izinkan mikrofon sekali untuk hands-free (atau ketik saja).",
+      );
+      return false;
+    }
+  }
+
   function speakAgent(text: string, lang: "id" | "en" = replyLang) {
     const plain = plainForSpeech(text);
     // Mute mic while agent speaks — avoid capturing TTS as user input
@@ -381,13 +449,20 @@ export function CookerChatPage() {
     if (rearmTimerRef.current) clearTimeout(rearmTimerRef.current);
     rearmTimerRef.current = setTimeout(() => {
       rearmTimerRef.current = null;
-      if (shouldArmMic()) startMicLoop();
+      if (shouldArmMic()) void startMicLoop();
     }, ms);
   }
 
-  function startMicLoop() {
+  async function startMicLoop() {
     if (!micSupported) return;
     if (busyRef.current || ttsSpeakingRef.current) return;
+    if (recRef.current) return;
+
+    if (canGetUserMedia() && !micStreamRef.current?.active) {
+      const ok = await ensureMicPermission();
+      if (!ok) return;
+    }
+
     if (recRef.current) return;
 
     const rec = createSpeechRecognition({ continuous: false });
@@ -395,6 +470,7 @@ export function CookerChatPage() {
       setError("Voice tidak didukung di browser ini — ketik saja.");
       setHandsFree(false);
       handsFreeRef.current = false;
+      releaseMicStream();
       return;
     }
     recRef.current = rec;
@@ -431,13 +507,16 @@ export function CookerChatPage() {
     }
   }
 
-  function enableHandsFree() {
+  async function enableHandsFree() {
+    maybeShowBrowserVoiceHint();
+    const ok = await ensureMicPermission();
+    if (!ok) return;
     setPendingHandsFreeAsk(false);
     pendingHandsFreeAskRef.current = false;
     setHandsFree(true);
     handsFreeRef.current = true;
     if (!ttsSpeakingRef.current && !busyRef.current) {
-      startMicLoop();
+      void startMicLoop();
     }
   }
 
@@ -445,6 +524,7 @@ export function CookerChatPage() {
     setHandsFree(false);
     handsFreeRef.current = false;
     stopMicInternal();
+    releaseMicStream();
   }
 
   /** Full teardown when leaving prep/cooking or planning reset / batal. */
@@ -528,24 +608,35 @@ export function CookerChatPage() {
     const sid = sessionRef.current?.id ?? session?.id;
     if (sid) handsFreeAskedSessionRef.current = sid;
 
-    setHandsFree(enable);
-    handsFreeRef.current = enable;
-    if (!enable) stopMicInternal();
-
-    const flushed = flushPendingCookStart();
-    if (!flushed) {
-      const text = enable
-        ? replyLang === "en"
-          ? "Hands-free **on**. Say lanjut / balik / ulang when ready."
-          : "Hands-free **on**. Bilang lanjut / balik / ulang kalau siap."
-        : replyLang === "en"
-          ? "Hands-free **off**. Tap the mic when you want to speak, or type."
-          : "Hands-free **off**. Ketuk mic kalau mau bicara, atau ketik.";
-      push({ role: "agent", text, kind: "text" });
-      if (enable && !ttsSpeakingRef.current && !busyRef.current) {
-        startMicLoop();
+    void (async () => {
+      if (enable) {
+        maybeShowBrowserVoiceHint();
+        const ok = await ensureMicPermission();
+        if (!ok) return;
+        setHandsFree(true);
+        handsFreeRef.current = true;
+      } else {
+        setHandsFree(false);
+        handsFreeRef.current = false;
+        stopMicInternal();
+        releaseMicStream();
       }
-    }
+
+      const flushed = flushPendingCookStart();
+      if (!flushed) {
+        const text = enable
+          ? replyLang === "en"
+            ? "Hands-free **on**. Say lanjut / balik / ulang when ready."
+            : "Hands-free **on**. Bilang lanjut / balik / ulang kalau siap."
+          : replyLang === "en"
+            ? "Hands-free **off**. Tap the mic when you want to speak, or type."
+            : "Hands-free **off**. Ketuk mic kalau mau bicara, atau ketik.";
+        push({ role: "agent", text, kind: "text" });
+        if (enable && !ttsSpeakingRef.current && !busyRef.current) {
+          void startMicLoop();
+        }
+      }
+    })();
   }
 
   function askHandsFreeOnce(sessionId: string) {
@@ -566,17 +657,17 @@ export function CookerChatPage() {
     const live = sessionRef.current;
     if (live && (live.status === "prep" || live.status === "cooking")) {
       if (pendingHandsFreeAskRef.current) {
-        startMicLoop();
+        void startMicLoop();
         return;
       }
       if (handsFreeRef.current) disableHandsFree();
       else {
         handsFreeAskedSessionRef.current = live.id;
-        enableHandsFree();
+        void enableHandsFree();
       }
       return;
     }
-    startMicLoop();
+    void startMicLoop();
   }
 
   // Soft mic cleanup when leaving prep/cooking — intentional clearCookSession does full reset
@@ -602,7 +693,10 @@ export function CookerChatPage() {
   }, [busy]);
 
   useEffect(() => {
-    return () => stopMicInternal();
+    return () => {
+      stopMicInternal();
+      releaseMicStream();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1093,17 +1187,23 @@ export function CookerChatPage() {
               <div className="flex flex-col items-end gap-1">
                 <button
                   type="button"
+                  disabled={connecting}
                   onClick={() => {
                     const connector = getPreferredConnector(connectors);
                     if (connector) connect({ connector });
                   }}
-                  className="min-h-11 rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white sm:min-h-0 sm:px-3 sm:py-1.5 sm:text-xs"
+                  className="min-h-11 rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50 sm:min-h-0 sm:px-3 sm:py-1.5 sm:text-xs"
                 >
-                  Connect MetaMask
+                  {connecting ? "Connecting…" : "Connect MetaMask"}
                 </button>
                 {!hasInjectedProvider() ? (
                   <span className="max-w-[11rem] text-right text-[10px] text-[var(--muted)]">
                     Opens MetaMask app on phone
+                  </span>
+                ) : null}
+                {connectError ? (
+                  <span className="max-w-[14rem] text-right text-[10px] text-red-600">
+                    {connectError.message || "Connect failed"}
                   </span>
                 ) : null}
               </div>

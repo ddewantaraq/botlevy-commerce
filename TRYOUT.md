@@ -31,11 +31,13 @@ Use this after deploy ([`DEPLOY.md`](./DEPLOY.md)). Testnet only (BSC **97**).
 Cooker and merchant are **installable PWAs** (Add to Home Screen). No offline mode — network required.
 
 1. Chrome on Android → open cooker or merchant URL → **Install app** / Add to Home Screen.  
-2. Open the installed app → **Connect MetaMask** (opens the MetaMask app via deeplink when Chrome has no injected wallet).  
+2. Open the installed app → **Connect MetaMask** (deeplink via `@metamask/connect-evm` when Chrome has no injected wallet).  
 3. Approve in MetaMask → return to the app → **Sign in** (SIWE).  
 4. Use BSC Testnet (**97**) and test mUSDC as on desktop.
 
-**Alternatives:** MetaMask **in-app browser** (injected provider) also works. Desktop MetaMask extension unchanged.
+**Cook-time voice:** Prefer **Chrome or the installed PWA** for agent TTS + hands-free mic. Allow the microphone **once** when turning Hands-free on — the app holds that permission for the prep/cook phase so Android should not re-prompt on every mic restart.
+
+**MetaMask in-app browser:** Wallet connect + SIWE work (injected provider). Agent TTS is often silent there, and some WebViews still struggle with speech — use Chrome/PWA for hands-free cook-time when possible.
 
 If MetaMask shows a phishing warning on `*.vercel.app`, use a test wallet only; custom domains reduce false positives later.
 
@@ -74,4 +76,4 @@ Discoverable agent identity (not required for SIWE tryout): [`docs/BNB-MCP.md`](
 - Testnet faucets run dry — wait or share tBNB between wallets.  
 - LLM (Ollama) optional — fallbacks may yield simpler recipes.  
 - File store (`runtime.json`) is fine for small tryouts; not multi-region HA.  
-- PWA is install-only (no offline). Mobile MetaMask uses app deeplink from Chrome/PWA; injected wallet works in MetaMask’s in-app browser.
+- PWA is install-only (no offline). Chrome/PWA uses MetaMask app deeplink; MetaMask in-app browser uses injected wallet. Agent TTS + hands-free cook-time work best in Chrome/PWA.

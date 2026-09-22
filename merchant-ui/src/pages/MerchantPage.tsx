@@ -56,7 +56,8 @@ const emptyProduct = {
 
 export function MerchantPage() {
   const { address, isConnected, chainId } = useAccount();
-  const { connect, connectors } = useConnect();
+  const { connect, connectors, error: connectError, isPending: connecting } =
+    useConnect();
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
   const { signMessageAsync } = useSignMessage();
@@ -307,17 +308,23 @@ export function MerchantPage() {
             <div className="flex flex-col gap-1">
               <button
                 type="button"
+                disabled={connecting}
                 onClick={() => {
                   const connector = getPreferredConnector(connectors);
                   if (connector) connect({ connector });
                 }}
-                className="min-h-11 rounded-md bg-[#0f766e] px-4 py-2.5 text-sm font-semibold text-white"
+                className="min-h-11 rounded-md bg-[#0f766e] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
               >
-                Connect MetaMask
+                {connecting ? "Connecting…" : "Connect MetaMask"}
               </button>
               {!hasInjectedProvider() ? (
                 <span className="text-[10px] text-[#5c6b68]">
                   Opens MetaMask app on phone
+                </span>
+              ) : null}
+              {connectError ? (
+                <span className="text-[10px] text-red-700">
+                  {connectError.message || "Connect failed"}
                 </span>
               ) : null}
             </div>

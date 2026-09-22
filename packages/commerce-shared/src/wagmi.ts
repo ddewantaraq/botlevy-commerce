@@ -12,7 +12,12 @@ export const config = createConfig({
   connectors: [
     injected({ shimDisconnect: true }),
     // Deeplink to MetaMask Android/iOS when no injected provider (Chrome / PWA).
-    metaMask({ dappMetadata: { name: "Botlevy Commerce" } }),
+    metaMask({
+      dappMetadata: {
+        name: "Botlevy Commerce",
+        url: "https://botlevy-cooker.vercel.app",
+      },
+    }),
   ],
   transports: {
     [bscTestnet.id]: http(rpc),
