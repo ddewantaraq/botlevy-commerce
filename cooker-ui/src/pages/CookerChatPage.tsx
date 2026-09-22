@@ -203,7 +203,8 @@ export function CookerChatPage() {
   const messagesRef = useRef<ChatMessage[]>(messages);
   const recRef = useRef<ReturnType<typeof createSpeechRecognition>>(null);
   const rearmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const micStreamRef = useRef<MediaStream | null>(null);
+  /** Permission granted this page session — do not hold a live MediaStream (blocks ASR on Android). */
+  const micPermissionOkRef = useRef(false);
   const browserHintShownRef = useRef(false);
   const pendingCookStartRef = useRef<{
     reply: string;
@@ -347,19 +348,6 @@ export function CookerChatPage() {
     return handsFreeRef.current || pendingHandsFreeAskRef.current;
   }
 
-  function releaseMicStream() {
-    const stream = micStreamRef.current;
-    if (!stream) return;
-    for (const track of stream.getTracks()) {
-      try {
-        track.stop();
-      } catch {
-        /* ignore */
-      }
-    }
-    micStreamRef.current = null;
-  }
-
   function maybeShowBrowserVoiceHint() {
     if (browserHintShownRef.current || typeof navigator === "undefined") return;
     const ua = navigator.userAgent || "";
@@ -383,21 +371,29 @@ export function CookerChatPage() {
   }
 
   /**
-   * Request mic once on a user gesture and hold the MediaStream for the
-   * hands-free phase so WebViews (e.g. MetaMask) do not re-prompt every
-   * SpeechRecognition restart.
+   * Request mic once on a user gesture, then release the stream immediately.
+   * Holding getUserMedia open blocks SpeechRecognition on Android Chrome/PWA.
+   * Browser permission stays granted so later recognition.start() should not re-prompt.
    */
   async function ensureMicPermission(): Promise<boolean> {
-    if (micStreamRef.current?.active) return true;
+    if (micPermissionOkRef.current) return true;
     if (!canGetUserMedia()) {
-      // Desktop Chrome can still use SpeechRecognition without a held stream.
+      // Desktop can still use SpeechRecognition without an explicit getUserMedia grant.
       return true;
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      micStreamRef.current = stream;
+      for (const track of stream.getTracks()) {
+        try {
+          track.stop();
+        } catch {
+          /* ignore */
+        }
+      }
+      micPermissionOkRef.current = true;
       return true;
     } catch {
+      micPermissionOkRef.current = false;
       setHandsFree(false);
       handsFreeRef.current = false;
       setPendingHandsFreeAsk(false);
@@ -422,7 +418,8 @@ export function CookerChatPage() {
       speakText(plain, ttsLangFor(lang), () => {
         ttsSpeakingRef.current = false;
         setTtsSpeaking(false);
-        if (shouldArmMic()) scheduleRearm(800);
+        // Android needs a beat after TTS before recognition can open the mic again.
+        if (shouldArmMic()) scheduleRearm(1200);
       });
     } else {
       ttsSpeakingRef.current = false;
@@ -458,7 +455,7 @@ export function CookerChatPage() {
     if (busyRef.current || ttsSpeakingRef.current) return;
     if (recRef.current) return;
 
-    if (canGetUserMedia() && !micStreamRef.current?.active) {
+    if (canGetUserMedia() && !micPermissionOkRef.current) {
       const ok = await ensureMicPermission();
       if (!ok) return;
     }
@@ -470,7 +467,6 @@ export function CookerChatPage() {
       setError("Voice tidak didukung di browser ini — ketik saja.");
       setHandsFree(false);
       handsFreeRef.current = false;
-      releaseMicStream();
       return;
     }
     recRef.current = rec;
@@ -483,9 +479,31 @@ export function CookerChatPage() {
         void handleSend(soft);
       }
     };
-    rec.onerror = () => {
+    rec.onerror = (ev) => {
       setListening(false);
       recRef.current = null;
+      const code = ev?.error ?? "";
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        micPermissionOkRef.current = false;
+        setHandsFree(false);
+        handsFreeRef.current = false;
+        setError(
+          replyLangRef.current === "en"
+            ? "Microphone blocked — allow mic in browser settings, or type."
+            : "Mikrofon diblokir — izinkan mic di pengaturan browser, atau ketik.",
+        );
+        return;
+      }
+      if (code === "audio-capture") {
+        setError(
+          replyLangRef.current === "en"
+            ? "Mic busy or unavailable — try again, or type."
+            : "Mic sibuk / tidak tersedia — coba lagi, atau ketik.",
+        );
+        if (shouldArmMic()) scheduleRearm(1000);
+        return;
+      }
+      // no-speech / aborted / network: quiet re-arm while hands-free
       if (shouldArmMic()) {
         scheduleRearm(600);
       } else if (!handsFreeRef.current && !pendingHandsFreeAskRef.current) {
@@ -524,7 +542,6 @@ export function CookerChatPage() {
     setHandsFree(false);
     handsFreeRef.current = false;
     stopMicInternal();
-    releaseMicStream();
   }
 
   /** Full teardown when leaving prep/cooking or planning reset / batal. */
@@ -619,7 +636,6 @@ export function CookerChatPage() {
         setHandsFree(false);
         handsFreeRef.current = false;
         stopMicInternal();
-        releaseMicStream();
       }
 
       const flushed = flushPendingCookStart();
@@ -693,10 +709,7 @@ export function CookerChatPage() {
   }, [busy]);
 
   useEffect(() => {
-    return () => {
-      stopMicInternal();
-      releaseMicStream();
-    };
+    return () => stopMicInternal();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
