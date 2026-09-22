@@ -14,9 +14,9 @@ Use this after deploy ([`DEPLOY.md`](./DEPLOY.md)). Testnet only (BSC **97**).
 
 | App | URL |
 |-----|-----|
-| Cooker | `https://________________` |
-| Merchant | `https://________________` |
-| API health | `https://________________/health` |
+| Cooker | `https://botlevy-cooker.vercel.app` |
+| Merchant | `https://botlevy-merchant.vercel.app` |
+| API health | `https://botlevy-commerce-production.up.railway.app/health` |
 
 ## One-time setup
 
@@ -26,16 +26,29 @@ Use this after deploy ([`DEPLOY.md`](./DEPLOY.md)). Testnet only (BSC **97**).
 4. **Owner** (deployer wallet) mints to cooker, e.g. `100000000` = 100 mUSDC (6 decimals). Other wallets cannot mint.  
 5. Cooker + merchant: Import token = MockUSDC address, decimals **6**.
 
+## Android (PWA + MetaMask)
+
+Cooker and merchant are **installable PWAs** (Add to Home Screen). No offline mode — network required.
+
+1. Chrome on Android → open cooker or merchant URL → **Install app** / Add to Home Screen.  
+2. Open the installed app → **Connect MetaMask** (opens the MetaMask app via deeplink when Chrome has no injected wallet).  
+3. Approve in MetaMask → return to the app → **Sign in** (SIWE).  
+4. Use BSC Testnet (**97**) and test mUSDC as on desktop.
+
+**Alternatives:** MetaMask **in-app browser** (injected provider) also works. Desktop MetaMask extension unchanged.
+
+If MetaMask shows a phishing warning on `*.vercel.app`, use a test wallet only; custom domains reduce false positives later.
+
 ## Merchant path
 
-1. Open merchant URL → Connect → SIWE as merchant.  
+1. Open merchant URL → Connect MetaMask → SIWE as merchant.  
 2. Set shop name + `payTo` (real receiving wallet).  
 3. Add products with tags the agent knows (`chicken`, `beef`, `salt`, …). Use **Suggest tags** if available.  
 4. Leave dashboard open to fulfill later.
 
 ## Cooker path
 
-1. Open cooker URL → Connect → SIWE as cooker.  
+1. Open cooker URL → Connect MetaMask → SIWE as cooker.  
 2. Chat in Bahasa or English, e.g. “cuma punya daging sapi, enak masak apa ya?”  
 3. Pick a dish → confirm bahan → **cek harga** / ya → pay MockUSDC.  
 4. Pre-cook / cook-time if offered.  
@@ -61,4 +74,4 @@ Discoverable agent identity (not required for SIWE tryout): [`docs/BNB-MCP.md`](
 - Testnet faucets run dry — wait or share tBNB between wallets.  
 - LLM (Ollama) optional — fallbacks may yield simpler recipes.  
 - File store (`runtime.json`) is fine for small tryouts; not multi-region HA.  
-- No PWA / WalletConnect in Week 3 — desktop MetaMask (or MetaMask in-app browser) for SIWE.
+- PWA is install-only (no offline). Mobile MetaMask uses app deeplink from Chrome/PWA; injected wallet works in MetaMask’s in-app browser.

@@ -19,6 +19,8 @@ import {
   formatIngredientLabel,
   formatMusdc,
   formatQtyUnit,
+  getPreferredConnector,
+  hasInjectedProvider,
   isSpeechRecognitionSupported,
   siweLogin,
   siweLogout,
@@ -1088,13 +1090,23 @@ export function CookerChatPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {!isConnected ? (
-              <button
-                type="button"
-                onClick={() => connect({ connector: connectors[0] })}
-                className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-white"
-              >
-                Connect
-              </button>
+              <div className="flex flex-col items-end gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const connector = getPreferredConnector(connectors);
+                    if (connector) connect({ connector });
+                  }}
+                  className="min-h-11 rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white sm:min-h-0 sm:px-3 sm:py-1.5 sm:text-xs"
+                >
+                  Connect MetaMask
+                </button>
+                {!hasInjectedProvider() ? (
+                  <span className="max-w-[11rem] text-right text-[10px] text-[var(--muted)]">
+                    Opens MetaMask app on phone
+                  </span>
+                ) : null}
+              </div>
             ) : (
               <>
                 <span className="hidden font-mono text-[10px] sm:inline">
@@ -1121,7 +1133,7 @@ export function CookerChatPage() {
                     type="button"
                     disabled={busy}
                     onClick={() => void login()}
-                    className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-white"
+                    className="min-h-11 rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50 sm:min-h-0 sm:px-3 sm:py-1.5 sm:text-xs"
                   >
                     SIWE
                   </button>

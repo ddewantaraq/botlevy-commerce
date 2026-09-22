@@ -11,6 +11,8 @@ import {
   API_URL,
   CHAIN_ID,
   formatMusdc,
+  getPreferredConnector,
+  hasInjectedProvider,
   MERCHANT_UNITS,
   parseMusdc,
   siweLogin,
@@ -302,13 +304,23 @@ export function MerchantPage() {
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
           {!isConnected ? (
-            <button
-              type="button"
-              onClick={() => connect({ connector: connectors[0] })}
-              className="rounded-md bg-[#0f766e] px-4 py-2 text-sm font-semibold text-white"
-            >
-              Connect merchant wallet
-            </button>
+            <div className="flex flex-col gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const connector = getPreferredConnector(connectors);
+                  if (connector) connect({ connector });
+                }}
+                className="min-h-11 rounded-md bg-[#0f766e] px-4 py-2.5 text-sm font-semibold text-white"
+              >
+                Connect MetaMask
+              </button>
+              {!hasInjectedProvider() ? (
+                <span className="text-[10px] text-[#5c6b68]">
+                  Opens MetaMask app on phone
+                </span>
+              ) : null}
+            </div>
           ) : (
             <>
               <span className="font-mono text-xs">{address}</span>
@@ -334,7 +346,7 @@ export function MerchantPage() {
                   type="button"
                   disabled={busy}
                   onClick={() => void login()}
-                  className="rounded-md bg-[#0f766e] px-4 py-2 text-sm font-semibold text-white"
+                  className="min-h-11 rounded-md bg-[#0f766e] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
                 >
                   {busy ? "Signing…" : "SIWE login"}
                 </button>

@@ -1,7 +1,9 @@
 # Week 3 — BNB MCP, ERC-8004, x402, contract harden, deploy
 
 **Status:** planning reference for execution (do not treat this file as “done” until tracks below are checked off).  
-**Out of scope:** PWA, WalletConnect, native apps, mainnet, full ERC-8183 escrow.
+**Out of scope:** WalletConnect cloud modal UX, offline PWA caching, native apps, mainnet, full ERC-8183 escrow.
+
+**Mobile (supersedes earlier “no PWA” note):** Install-only PWA shells + wagmi `metaMask()` deeplink for Android Chrome/homescreen — see [`TRYOUT.md`](./TRYOUT.md) Android section.
 
 **North star:** Hosted cooker + merchant on HTTPS; MockUSDC mint owner-only on BSC Testnet 97; CommerceAgent registered (ERC-8004); public agent runs payable via x402; Cursor can use BNB MCP/skill. SIWE in-app paths stay free and green.
 
@@ -63,8 +65,8 @@ Defaults: **Railway/Fly for** `backend`, **Vercel for** `cooker-ui` **+** `merch
 2. API listens on `0.0.0.0` / `PORT`.
 3. CORS: `COOKER_URL` + `MERCHANT_URL` = production HTTPS origins (`[backend/src/config.ts](./backend/src/config.ts)` `uiOrigins()`).
 4. Cookie `Secure` when UIs are HTTPS (`cookieSecure()`).
-5. Vite apps: `VITE_API_URL`, `VITE_MOCK_USDC_ADDRESS`, `VITE_CHAIN_ID`, RPC.
-6. Smoke after deploy: health → SIWE cooker → run → quote → pay → merchant fulfill.
+5. Vite apps: `VITE_API_URL`, `VITE_MOCK_USDC_ADDRESS`, `VITE_CHAIN_ID`, RPC; install-only PWA (`vite-plugin-pwa`, no offline) + MetaMask connector for Android.
+6. Smoke after deploy: health → SIWE cooker → run → quote → pay → merchant fulfill (desktop or Android PWA + MetaMask app).
 
 
 
