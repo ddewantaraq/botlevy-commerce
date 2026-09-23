@@ -6,3 +6,5 @@ backend/data/runtime.json
 *.log
 .DS_Store
 frontend/dist/
+# Local Cursor MCP (may contain testnet PRIVATE_KEY) — use mcp.json.example
+.cursor/mcp.json

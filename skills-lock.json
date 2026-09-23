@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "bnbagent-studio": {
+      "source": "bnb-chain/bnbchain-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/bnbagent-studio/skills/bnbagent-studio/SKILL.md",
+      "computedHash": "376fc883a9292d092c57f5de0a80f6567ba7b0ad96ad57eaba25d09306b50ca4"
+    },
+    "bnbchain-mcp": {
+      "source": "bnb-chain/bnbchain-skills",
+      "sourceType": "github",
+      "skillPath": "skills/bnbchain-mcp-skill/SKILL.md",
+      "computedHash": "16581ac841e65b9f7a64de69883a28698335729f9692868fc260154e737c03f7"
+    }
+  }
+}
