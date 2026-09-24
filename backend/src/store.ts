@@ -791,16 +791,17 @@ export function matchSuggestedDish(
 /** True if this payment tx hash was already consumed for a public run. */
 export function isPaymentTxSpent(txHash: string): boolean {
   const key = txHash.toLowerCase();
-  return load().spentPaymentTxs.some((t) => t.txHash === key);
+  if (!db.spentPaymentTxs) db.spentPaymentTxs = [];
+  return db.spentPaymentTxs.some((t) => t.txHash === key);
 }
 
 /**
- * Atomically mark a payment tx as spent.
+ * Atomically mark a payment tx as spent (same in-memory db as saveRun/persist).
  * @returns true if newly claimed; false if already spent (replay).
  */
 export function claimPaymentTx(txHash: string): boolean {
-  const db = load();
   const key = txHash.toLowerCase();
+  if (!db.spentPaymentTxs) db.spentPaymentTxs = [];
   if (db.spentPaymentTxs.some((t) => t.txHash === key)) return false;
   db.spentPaymentTxs.push({
     txHash: key,
@@ -809,6 +810,6 @@ export function claimPaymentTx(txHash: string): boolean {
   if (db.spentPaymentTxs.length > 500) {
     db.spentPaymentTxs = db.spentPaymentTxs.slice(-500);
   }
-  save(db);
+  persist();
   return true;
 }
