@@ -32,7 +32,7 @@ Health check: `curl http://localhost:4100/health`
 - Wife-story chat / pre-cook / cook-time: [`INSTRUCTIONS-COOKING.md`](./INSTRUCTIONS-COOKING.md)
 - Week 3 plan (BNB MCP, ERC-8004, x402, deploy): [`WEEK3.md`](./WEEK3.md)
 - Cursor BNB MCP + skills (Track C): [`docs/BNB-MCP.md`](./docs/BNB-MCP.md)
-- ERC-8004 agentURI (Track D): `https://botlevy-commerce-production.up.railway.app/agent/metadata.json`
+- ERC-8004 agentURI (Track D): `https://botlevy-commerce-production.up.railway.app/agent/metadata.json` (agentId **2464**)
 - Hosted tryout: [`TRYOUT.md`](./TRYOUT.md) · Deploy checklist: [`DEPLOY.md`](./DEPLOY.md)
 - LLM eval/improve (AI Hero skill + rule): [`.cursor/skills/improve-llm-app/`](./.cursor/skills/improve-llm-app/)
 - LLM evals + observability (`eval:llm`, `LLM_TRACE`, `VITE_AGENT_DEBUG`): [`docs/LLM-EVALS-OBS.md`](./docs/LLM-EVALS-OBS.md)

@@ -114,9 +114,8 @@ See also `[TRYOUT.md](./TRYOUT.md)` (write during this track).
 ### Exit
 
 - [x] Metadata hosted on Railway API (`GET /agent/metadata.json`)
-- [ ] Agent visible on testnet registry / 8004scan (complete after MCP `register_erc8004_agent`)
-- [x] Docs point to metadata URI + integrator vs SIWE
----
+- [x] Agent visible on testnet registry / 8004scan (agentId **2464**)
+- [x] Docs point to metadata URI + integrator vs SIWE---
 
 
 
