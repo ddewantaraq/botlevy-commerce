@@ -55,8 +55,9 @@ OLLAMA_HOST=https://ollama.com
 OLLAMA_API_KEY=...
 OLLAMA_MODEL=qwen3.5
 # After ERC-8004 register:
+# agentURI (live metadata): https://botlevy-commerce-production.up.railway.app/agent/metadata.json
 ERC8004_AGENT_ID=
-ERC8004_AGENT_URI=
+ERC8004_AGENT_URI=https://botlevy-commerce-production.up.railway.app/agent/metadata.json
 ERC8004_TX_HASH=
 # x402 public runs:
 X402_ENABLED=true

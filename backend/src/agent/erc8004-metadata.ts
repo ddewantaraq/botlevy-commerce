@@ -1,0 +1,36 @@
+/**
+ * ERC-8004 agentURI payload — public identity for integrators / 8004scan.
+ * Keep in sync with docs/agent-metadata.example.json.
+ */
+export const AGENT_METADATA = {
+  name: "Botlevy CommerceAgent",
+  description:
+    "Embeddable cooking-commerce API for third-party apps and agents: pantry → dish ideas → merchant catalog match → MockUSDC quote on BSC Testnet (97). Botlevy Cooker is the free SIWE reference client; integrators call the public-runs service (x402-gated). Not a generic recipe chatbot—output is structured commerce JSON (status, steps, suggestions/plan/quote).",
+  image: "https://botlevy-cooker.vercel.app/icons/icon-512.png",
+  services: [
+    {
+      name: "public-runs",
+      endpoint:
+        "https://botlevy-commerce-production.up.railway.app/agent/public/runs",
+      version: "1.0",
+    },
+  ],
+  input: {
+    goal: "string — cooking intent (e.g. mau masak ayam semur)",
+    pantry: "string[] — optional ingredient tags",
+    selectedDish: "string — optional dish pick after suggestions",
+  },
+  output: {
+    runId: "string",
+    status: "suggestions | cookable | quoted | clarify | …",
+    steps: "orchestrator trail",
+    suggestions: "dish list when pantry-first",
+    plan: "recipe/plan when available",
+    quote: "merchant lines + total (MockUSDC) when quoted",
+  },
+  chainId: 97,
+  x402: {
+    network: "eip155:97",
+    token: "MockUSDC",
+  },
+} as const;

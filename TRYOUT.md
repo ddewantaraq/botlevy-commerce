@@ -69,7 +69,14 @@ SIWE `/agent/runs` stays free for the cooker app.
 
 ## ERC-8004
 
-Discoverable agent identity (not required for SIWE tryout): [`docs/BNB-MCP.md`](./docs/BNB-MCP.md), https://testnet.8004scan.io/
+Discoverable **integrator** identity on BSC Testnet (not required for SIWE cooker/merchant tryout).
+
+1. Passport JSON: `https://botlevy-commerce-production.up.railway.app/agent/metadata.json`  
+2. Find the agent on https://testnet.8004scan.io/ (after register — see [`docs/BNB-MCP.md`](./docs/BNB-MCP.md)).  
+3. Integrators call `services.endpoint` → `POST /agent/public/runs` (x402 in Track E; may 404 until then).  
+4. Cooker users keep using SIWE + free `/agent/runs` — **no 8004 needed**.
+
+Value prop for buyers: structured commerce JSON (pantry → dish → warung quote), not a free-form recipe chatbot.
 
 ## Known limits
 

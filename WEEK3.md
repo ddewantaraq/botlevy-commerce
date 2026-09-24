@@ -100,21 +100,22 @@ See also `[TRYOUT.md](./TRYOUT.md)` (write during this track).
 ## Track D — ERC-8004
 
 1. Host agent metadata JSON (name, description, image, `services` with public API URL) — see `[docs/agent-metadata.example.json](./docs/agent-metadata.example.json)`.
-2. Register **Botlevy CommerceAgent** on BSC Testnet via MCP `register_erc8004_agent` (`network: bsc-testnet`).
-3. Store in env + README:
+2. Serve live: `GET https://botlevy-commerce-production.up.railway.app/agent/metadata.json`.
+3. Register **Botlevy CommerceAgent** on BSC Testnet via MCP `register_erc8004_agent` (`network: bsc-testnet`).
+4. Store in env + README:
   - `ERC8004_AGENT_ID`
   - `ERC8004_AGENT_URI`
   - `ERC8004_TX_HASH`
-4. Check [https://testnet.8004scan.io/](https://testnet.8004scan.io/)
-5. Document: SIWE app users do **not** need 8004; identity is for **public/discoverable** agent surface.
+5. Check [https://testnet.8004scan.io/](https://testnet.8004scan.io/)
+6. Document: SIWE app users do **not** need 8004; identity is for **public/discoverable** integrator surface (x402 Track E).
 
 
 
 ### Exit
 
-- [ ] Agent visible on testnet registry / 8004scan
-- [ ] Docs point to it
-
+- [x] Metadata hosted on Railway API (`GET /agent/metadata.json`)
+- [ ] Agent visible on testnet registry / 8004scan (complete after MCP `register_erc8004_agent`)
+- [x] Docs point to metadata URI + integrator vs SIWE
 ---
 
 

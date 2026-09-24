@@ -33,9 +33,16 @@ import {
 } from "../store.js";
 import { normalizePantryTags } from "../agent/tools/pantry.js";
 import { summarizeRunObs } from "../agent/types.js";
+import { AGENT_METADATA } from "../agent/erc8004-metadata.js";
 import { env } from "../config.js";
 
 export const agentRouter = Router();
+
+/** ERC-8004 agentURI — public identity for 8004scan / integrators (no auth). */
+agentRouter.get("/metadata.json", (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=300");
+  res.json(AGENT_METADATA);
+});
 
 function withObs<T extends Record<string, unknown>>(
   body: T,
