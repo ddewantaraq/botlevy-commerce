@@ -36,8 +36,8 @@ app.use(apiLimiter);
 app.get("/health", (_req, res) => {
   res.json({
     ok: true,
-    // Bump when shipping ERC-8004 metadata endpoint (Track D).
-    deployProbe: "erc8004-metadata-1",
+    // Bump when shipping ERC-8004 metadata profile alignment.
+    deployProbe: "erc8004-metadata-v2",
     chainId: env.CHAIN_ID,
     mockUsdc: env.MOCK_USDC_ADDRESS || null,
     ollamaHost: env.OLLAMA_HOST,
