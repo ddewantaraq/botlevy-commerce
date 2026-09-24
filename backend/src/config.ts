@@ -44,6 +44,16 @@ const schema = z.object({
     .default("")
     .transform((v) => /^(1|true|yes|on)$/i.test(v.trim())),
   DEMO_PAYER_PRIVATE_KEY: z.string().optional().default(""),
+  /** Kill switch for POST /agent/public/runs (x402-style gate). */
+  X402_ENABLED: z
+    .string()
+    .optional()
+    .default("")
+    .transform((v) => /^(1|true|yes|on)$/i.test(v.trim())),
+  /** Treasury that receives MockUSDC agent-run fees (agentWallet). */
+  X402_PAYTO: z.string().optional().default(""),
+  /** Fee in MockUSDC atomic units (6 decimals). Default 10000 = 0.01 mUSDC. */
+  X402_PRICE: z.coerce.number().int().positive().default(10_000),
 });
 
 export const env = schema.parse(process.env);

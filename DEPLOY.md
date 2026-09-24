@@ -61,9 +61,11 @@ ERC8004_AGENT_URI=https://botlevy-commerce-production.up.railway.app/agent/metad
 ERC8004_TX_HASH=0x350420cccafd878e289b6aa1e6dd83f97250e32fde38dc714a8b13d350fed758
 # x402 public runs:
 X402_ENABLED=true
-X402_PAYTO=0x...
+X402_PAYTO=0x9389afdD7Ae5729BcCD2DFeac738b8bFd6110a74
 X402_PRICE=10000
 ```
+
+Demo against hosted API: `API_URL=https://botlevy-commerce-production.up.railway.app npm run demo:x402` (needs `DEMO_PAYER_PRIVATE_KEY` + mUSDC). See [`docs/X402.md`](./docs/X402.md).
 
 Optional: attach a Railway volume at `backend/data` so `runtime.json` survives redeploys.
 

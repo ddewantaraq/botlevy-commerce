@@ -52,7 +52,7 @@ Source of truth in repo: [`agent-metadata.example.json`](./agent-metadata.exampl
 
 Aligned with the [Agent Metadata Profile (registration-v1)](https://best-practices.8004scan.io/docs/01-agent-metadata-standard.html): `type`, `active`, `x402Support`, `services` (`web` + `agentWallet`), `registrations`, `supportedTrust`.
 
-**Positioning:** embeddable cooking-commerce API for third-party apps (pantry → dish → catalog match → MockUSDC quote). Cooker UI is the free SIWE reference client. `services` `web` endpoint points at `POST /agent/public/runs` (x402 in Track E; may 404 until then).
+**Positioning:** embeddable cooking-commerce API for third-party apps (pantry → dish → catalog match → MockUSDC quote). Cooker UI is the free SIWE reference client. `services` `web` endpoint points at `POST /agent/public/runs` (x402-gated; unpaid → 402).
 
 ### Register (Track D — done)
 

@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "demo:agent": "tsx scripts/demo-agent.ts",
+    "demo:x402": "tsx scripts/demo-x402-public-run.ts",
     "smoke:orchestrator": "tsx scripts/smoke-orchestrator.ts",
     "smoke:session": "tsx scripts/smoke-session-message.ts",
     "eval:llm": "tsx evals/run.ts"

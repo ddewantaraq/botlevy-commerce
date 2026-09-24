@@ -133,9 +133,9 @@ Keep existing SIWE `[POST /agent/runs](./backend/src/routes/agent.ts)` **unchang
 
 ### Exit
 
-- [ ] Unauthenticated caller unpaid → **402**
-- [ ] Valid payment proof → run JSON
-- [ ] SIWE `/agent/runs` still free
+- [x] Unauthenticated caller unpaid → **402**
+- [x] Valid payment proof → run JSON
+- [x] SIWE `/agent/runs` still free
 
 ---
 
@@ -163,8 +163,8 @@ Keep existing SIWE `[POST /agent/runs](./backend/src/routes/agent.ts)` **unchang
 - [ ] Non-owner `mint` reverts; owner mint works
 - [ ] Hosted cooker: chat → cek harga → pay → merchant fulfill
 - [ ] MCP register/read works once on `bsc-testnet`
-- [ ] `POST /agent/public/runs` without pay → 402; with valid x402 → run JSON
-- [ ] `POST /agent/runs` with SIWE still works without x402
+- [x] `POST /agent/public/runs` without pay → 402; with valid x402 → run JSON
+- [x] `POST /agent/runs` with SIWE still works without x402
 
 ---
 

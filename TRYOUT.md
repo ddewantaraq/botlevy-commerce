@@ -62,10 +62,17 @@ If MetaMask shows a phishing warning on `*.vercel.app`, use a test wallet only; 
 - `cuma punya daging dan bawang, enak masak apa ya?`  
 - After quote fail: `belanja sendiri` then `mulai masak`
 
-## Public x402 agent (optional)
+## Public x402 agent
 
 Unauthenticated paid runs: see [`docs/X402.md`](./docs/X402.md).  
 SIWE `/agent/runs` stays free for the cooker app.
+
+```bash
+# Local or hosted (needs DEMO_PAYER_PRIVATE_KEY + mUSDC in .env)
+API_URL=https://botlevy-commerce-production.up.railway.app npm run demo:x402
+```
+
+Expect console: **402** → agent-fee tx → **quoted** warung lines → replay **409**.
 
 ## ERC-8004
 
@@ -73,7 +80,7 @@ Discoverable **integrator** identity on BSC Testnet (not required for SIWE cooke
 
 1. Passport JSON: `https://botlevy-commerce-production.up.railway.app/agent/metadata.json?v=2` (registration-v1 profile)  
 2. On-chain id **2464** — https://testnet.8004scan.io/agents/bsc-testnet/2464 (and [`docs/BNB-MCP.md`](./docs/BNB-MCP.md)).  
-3. Integrators call `services` → `web` → `POST /agent/public/runs` (x402 in Track E; may 404 until then — endpoint verification may stay pending).  
+3. Integrators call `services` → `web` → `POST /agent/public/runs` (x402-gated; unpaid → **402**).  
 4. Cooker users keep using SIWE + free `/agent/runs` — **no 8004 needed**.
 
 Value prop for buyers: structured commerce JSON (pantry → dish → warung quote), not a free-form recipe chatbot.

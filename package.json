@@ -15,6 +15,7 @@
     "dev:merchant": "npm run dev --workspace=merchant-ui",
     "dev:frontend": "npm run dev:cooker",
     "demo:agent": "npm run demo:agent --workspace=backend",
+    "demo:x402": "npm run demo:x402 --workspace=backend",
     "smoke:orchestrator": "npm run smoke:orchestrator --workspace=backend"
   },
   "engines": {

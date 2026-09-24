@@ -248,6 +248,8 @@ type Db = {
   }>;
   sessions: Record<string, Session>;
   nonces: Record<string, Nonce>;
+  /** Consumed x402 payment tx hashes (one-time use). */
+  spentPaymentTxs: Array<{ txHash: string; claimedAt: string }>;
 };
 
 function emptyDb(): Db {
@@ -267,6 +269,7 @@ function emptyDb(): Db {
     pendingStartPreps: [],
     sessions: {},
     nonces: {},
+    spentPaymentTxs: [],
   };
 }
 
@@ -295,6 +298,7 @@ function load(): Db {
       orders: parsed.orders ?? [],
       quotes: parsed.quotes ?? [],
       runs: parsed.runs ?? [],
+      spentPaymentTxs: parsed.spentPaymentTxs ?? [],
     };
   } catch {
     return emptyDb();
@@ -320,6 +324,7 @@ function save(db: Db) {
         pendingResets: db.pendingResets.slice(-50),
         lastReadyRuns: db.lastReadyRuns.slice(-50),
         pendingStartPreps: db.pendingStartPreps.slice(-50),
+        spentPaymentTxs: db.spentPaymentTxs.slice(-500),
       },
       null,
       2,
@@ -781,4 +786,29 @@ export function matchSuggestedDish(
     if (g === d || g.includes(d) || d.includes(g)) return dish;
   }
   return null;
+}
+
+/** True if this payment tx hash was already consumed for a public run. */
+export function isPaymentTxSpent(txHash: string): boolean {
+  const key = txHash.toLowerCase();
+  return load().spentPaymentTxs.some((t) => t.txHash === key);
+}
+
+/**
+ * Atomically mark a payment tx as spent.
+ * @returns true if newly claimed; false if already spent (replay).
+ */
+export function claimPaymentTx(txHash: string): boolean {
+  const db = load();
+  const key = txHash.toLowerCase();
+  if (db.spentPaymentTxs.some((t) => t.txHash === key)) return false;
+  db.spentPaymentTxs.push({
+    txHash: key,
+    claimedAt: new Date().toISOString(),
+  });
+  if (db.spentPaymentTxs.length > 500) {
+    db.spentPaymentTxs = db.spentPaymentTxs.slice(-500);
+  }
+  save(db);
+  return true;
 }

@@ -13,3 +13,12 @@ export const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+/** Stricter limit for unauthenticated POST /agent/public/runs. */
+export const publicAgentLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: "rate_limited", message: "Too many public agent requests" },
+});
