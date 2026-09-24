@@ -50,19 +50,22 @@ Public metadata (integrator passport):
 
 Source of truth in repo: [`agent-metadata.example.json`](./agent-metadata.example.json) / [`backend/src/agent/erc8004-metadata.ts`](../backend/src/agent/erc8004-metadata.ts).
 
-**Positioning:** embeddable cooking-commerce API for third-party apps (pantry → dish → catalog match → MockUSDC quote). Cooker UI is the free SIWE reference client. `services.endpoint` points at `POST /agent/public/runs` (x402 in Track E; may 404 until then).
+Aligned with the [Agent Metadata Profile (registration-v1)](https://best-practices.8004scan.io/docs/01-agent-metadata-standard.html): `type`, `active`, `x402Support`, `services` (`web` + `agentWallet`), `registrations`, `supportedTrust`.
+
+**Positioning:** embeddable cooking-commerce API for third-party apps (pantry → dish → catalog match → MockUSDC quote). Cooker UI is the free SIWE reference client. `services` `web` endpoint points at `POST /agent/public/runs` (x402 in Track E; may 404 until then).
 
 ### Register (Track D — done)
 
 | Field | Value |
 |-------|--------|
 | `ERC8004_AGENT_ID` | `2464` |
-| `ERC8004_AGENT_URI` | `https://botlevy-commerce-production.up.railway.app/agent/metadata.json` |
+| `ERC8004_AGENT_URI` | `https://botlevy-commerce-production.up.railway.app/agent/metadata.json?v=2` |
 | `ERC8004_TX_HASH` | `0x350420cccafd878e289b6aa1e6dd83f97250e32fde38dc714a8b13d350fed758` |
-| Owner | `0x9389afdD7Ae5729BcCD2DFeac738b8bFd6110a74` |
+| URI refresh tx | `0xeefa02347873aee96630e353d3fbbb0a8c883899981534a5d654b77388156e53` |
+| Owner / agentWallet | `0x9389afdD7Ae5729BcCD2DFeac738b8bFd6110a74` |
 | Network | `bsc-testnet` (97) |
 
-Verify: MCP `get_erc8004_agent` with id `2464` + https://testnet.8004scan.io/
+Verify: https://testnet.8004scan.io/agents/bsc-testnet/2464?tab=quality
 
 ## 6. SIWE vs 8004
 
