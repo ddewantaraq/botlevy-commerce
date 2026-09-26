@@ -7,6 +7,17 @@ export {
   getPreferredConnector,
 } from "./wagmi";
 export { siweLogin, siweLogout, type SessionRole } from "./siwe";
+export {
+  setSiweLoginIntent,
+  getSiweLoginIntent,
+  clearSiweLoginIntent,
+  hasSiweLoginIntent,
+} from "./siwe-intent";
+export {
+  useWalletSiweLogin,
+  type WalletSiwePhase,
+  type SiweLoginResult,
+} from "./use-wallet-siwe-login";
 export { MOCK_USDC_ABI, formatMusdc, parseMusdc } from "./token";
 export {
   speakText,

@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   useAccount,
-  useConnect,
   useDisconnect,
-  useSignMessage,
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
@@ -19,14 +17,13 @@ import {
   formatIngredientLabel,
   formatMusdc,
   formatQtyUnit,
-  getPreferredConnector,
   hasInjectedProvider,
   isSpeechRecognitionSupported,
-  siweLogin,
   siweLogout,
   speakText,
   stopSpeaking,
   transcriptFromRecognitionResults,
+  useWalletSiweLogin,
 } from "@botlevy-commerce/shared";
 import { MicIcon } from "../components/MicIcon";
 
@@ -162,11 +159,8 @@ function ttsLangFor(lang: "id" | "en"): string {
 
 export function CookerChatPage() {
   const { address, isConnected, chainId } = useAccount();
-  const { connect, connectors, error: connectError, isPending: connecting } =
-    useConnect();
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
-  const { signMessageAsync } = useSignMessage();
   const { writeContractAsync, isPending: paying } = useWriteContract();
 
   const [cookerAddress, setCookerAddress] = useState("");
@@ -291,28 +285,25 @@ export function CookerChatPage() {
     void refreshSession();
   }, [refreshSession]);
 
-  async function login() {
-    setBusy(true);
-    setError("");
-    try {
-      if (wrongChain) await switchChain({ chainId: bscTestnet.id });
-      if (!address) throw new Error("Connect wallet first");
-      const data = await siweLogin({
-        address,
-        role: "cooker",
-        statement: "Sign in to Botlevy Cooker",
-        signMessageAsync,
-      });
+  const {
+    startLogin,
+    busy: walletBusy,
+    buttonLabel,
+    error: walletError,
+    connectError,
+    clearIntent,
+  } = useWalletSiweLogin({
+    role: "cooker",
+    statement: "Sign in to Botlevy Cooker",
+    signedIn,
+    onSignedIn: async (data) => {
       setCookerAddress(data.address);
       await refreshSession();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+    },
+  });
 
   async function logout() {
+    clearIntent();
     await siweLogout();
     setCookerAddress("");
     clearCookSession();
@@ -1196,27 +1187,26 @@ export function CookerChatPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {!isConnected ? (
+            {!signedIn ? (
               <div className="flex flex-col items-end gap-1">
                 <button
                   type="button"
-                  disabled={connecting}
-                  onClick={() => {
-                    const connector = getPreferredConnector(connectors);
-                    if (connector) connect({ connector });
-                  }}
+                  disabled={walletBusy}
+                  onClick={() => void startLogin()}
                   className="min-h-11 rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50 sm:min-h-0 sm:px-3 sm:py-1.5 sm:text-xs"
                 >
-                  {connecting ? "Connecting…" : "Connect MetaMask"}
+                  {buttonLabel}
                 </button>
                 {!hasInjectedProvider() ? (
                   <span className="max-w-[11rem] text-right text-[10px] text-[var(--muted)]">
                     Opens MetaMask app on phone
                   </span>
                 ) : null}
-                {connectError ? (
+                {walletError || connectError ? (
                   <span className="max-w-[14rem] text-right text-[10px] text-red-600">
-                    {connectError.message || "Connect failed"}
+                    {walletError ||
+                      connectError?.message ||
+                      "Connect failed"}
                   </span>
                 ) : null}
               </div>
@@ -1233,22 +1223,13 @@ export function CookerChatPage() {
                   >
                     Switch 97
                   </button>
-                ) : signedIn ? (
+                ) : (
                   <button
                     type="button"
                     onClick={() => void logout()}
                     className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs"
                   >
                     Logout
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void login()}
-                    className="min-h-11 rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50 sm:min-h-0 sm:px-3 sm:py-1.5 sm:text-xs"
-                  >
-                    SIWE
                   </button>
                 )}
               </>

@@ -31,26 +31,26 @@ Use this after deploy ([`DEPLOY.md`](./DEPLOY.md)). Testnet only (BSC **97**).
 Cooker and merchant are **installable PWAs** (Add to Home Screen). No offline mode — network required.
 
 1. Chrome on Android → open cooker or merchant URL → **Install app** / Add to Home Screen.  
-2. Open the installed app → **Connect MetaMask** (deeplink via `@metamask/connect-evm` when Chrome has no injected wallet).  
-3. Approve in MetaMask → return to the app → **Sign in** (SIWE).  
-4. Use BSC Testnet (**97**) and test mUSDC as on desktop.
+2. Open the installed app → **Masuk dengan MetaMask** (one button: connect + SIWE). With no injected wallet, this deeplinks via `@metamask/connect-evm`; after you approve and return, SIWE resumes automatically.  
+3. Use BSC Testnet (**97**) and test mUSDC as on desktop.  
+4. If the home-screen icon looks outdated after a cooker deploy, remove the PWA and reinstall (or clear site data) — icons are cached by the install.
 
 **Cook-time voice:** Prefer **Chrome or the installed PWA** for agent TTS + hands-free mic. Allow the microphone **once** when turning Hands-free on — the app holds that permission for the prep/cook phase so Android should not re-prompt on every mic restart.
 
-**MetaMask in-app browser:** Wallet connect + SIWE work (injected provider). Agent TTS is often silent there, and some WebViews still struggle with speech — use Chrome/PWA for hands-free cook-time when possible.
+**MetaMask in-app browser:** One-button login works (injected provider). Agent TTS is often silent there, and some WebViews still struggle with speech — use Chrome/PWA for hands-free cook-time when possible.
 
 If MetaMask shows a phishing warning on `*.vercel.app`, use a test wallet only; custom domains reduce false positives later.
 
 ## Merchant path
 
-1. Open merchant URL → Connect MetaMask → SIWE as merchant.  
+1. Open merchant URL → **Masuk dengan MetaMask** (connect + SIWE in one step).  
 2. Set shop name + `payTo` (real receiving wallet).  
 3. Add products with tags the agent knows (`chicken`, `beef`, `salt`, …). Use **Suggest tags** if available.  
 4. Leave dashboard open to fulfill later.
 
 ## Cooker path
 
-1. Open cooker URL → Connect MetaMask → SIWE as cooker.  
+1. Open cooker URL → **Masuk dengan MetaMask** (connect + SIWE in one step).  
 2. Chat in Bahasa or English, e.g. “cuma punya daging sapi, enak masak apa ya?”  
 3. Pick a dish → confirm bahan → **cek harga** / ya → pay MockUSDC.  
 4. Pre-cook / cook-time if offered.  

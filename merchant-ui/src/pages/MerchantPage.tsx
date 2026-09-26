@@ -1,22 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  useAccount,
-  useConnect,
-  useDisconnect,
-  useSignMessage,
-  useSwitchChain,
-} from "wagmi";
+import { useAccount, useDisconnect, useSwitchChain } from "wagmi";
 import { bscTestnet } from "wagmi/chains";
 import {
   API_URL,
   CHAIN_ID,
   formatMusdc,
-  getPreferredConnector,
   hasInjectedProvider,
   MERCHANT_UNITS,
   parseMusdc,
-  siweLogin,
   siweLogout,
+  useWalletSiweLogin,
 } from "@botlevy-commerce/shared";
 
 type Product = {
@@ -56,11 +49,8 @@ const emptyProduct = {
 
 export function MerchantPage() {
   const { address, isConnected, chainId } = useAccount();
-  const { connect, connectors, error: connectError, isPending: connecting } =
-    useConnect();
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
-  const { signMessageAsync } = useSignMessage();
   const [merchant, setMerchant] = useState<Merchant | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -111,27 +101,24 @@ export function MerchantPage() {
     void refresh();
   }, [refresh]);
 
-  async function login() {
-    setBusy(true);
-    setError("");
-    try {
-      if (wrongChain) await switchChain({ chainId: bscTestnet.id });
-      if (!address) throw new Error("Connect wallet first");
-      await siweLogin({
-        address,
-        role: "merchant",
-        statement: "Sign in to Botlevy Commerce merchant dashboard",
-        signMessageAsync,
-      });
+  const {
+    startLogin,
+    busy: walletBusy,
+    buttonLabel,
+    error: walletError,
+    connectError,
+    clearIntent,
+  } = useWalletSiweLogin({
+    role: "merchant",
+    statement: "Sign in to Botlevy Commerce merchant dashboard",
+    signedIn,
+    onSignedIn: async () => {
       await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+    },
+  });
 
   async function logout() {
+    clearIntent();
     await siweLogout();
     setMerchant(null);
     setProducts([]);
@@ -304,40 +291,30 @@ export function MerchantPage() {
           Catalog, AI tag suggestions, and orders on BSC Testnet (97). Separate from the cooker chat app.
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
-          {!isConnected ? (
+          {!signedIn ? (
             <div className="flex flex-col gap-1">
               <button
                 type="button"
-                disabled={connecting}
-                onClick={() => {
-                  const connector = getPreferredConnector(connectors);
-                  if (connector) connect({ connector });
-                }}
+                disabled={walletBusy}
+                onClick={() => void startLogin()}
                 className="min-h-11 rounded-md bg-[#0f766e] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
               >
-                {connecting ? "Connecting…" : "Connect MetaMask"}
+                {buttonLabel}
               </button>
               {!hasInjectedProvider() ? (
                 <span className="text-[10px] text-[#5c6b68]">
                   Opens MetaMask app on phone
                 </span>
               ) : null}
-              {connectError ? (
+              {walletError || connectError ? (
                 <span className="text-[10px] text-red-700">
-                  {connectError.message || "Connect failed"}
+                  {walletError || connectError?.message || "Connect failed"}
                 </span>
               ) : null}
             </div>
           ) : (
             <>
               <span className="font-mono text-xs">{address}</span>
-              <button
-                type="button"
-                onClick={() => void logout()}
-                className="rounded-md border border-[#e7e7e0] px-3 py-1.5 text-sm"
-              >
-                Disconnect
-              </button>
               {wrongChain ? (
                 <button
                   type="button"
@@ -346,18 +323,16 @@ export function MerchantPage() {
                 >
                   Switch to BSC Testnet
                 </button>
-              ) : signedIn ? (
-                <span className="text-xs text-[#0f766e]">Signed in as merchant</span>
               ) : (
                 <button
                   type="button"
-                  disabled={busy}
-                  onClick={() => void login()}
-                  className="min-h-11 rounded-md bg-[#0f766e] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                  onClick={() => void logout()}
+                  className="rounded-md border border-[#e7e7e0] px-3 py-1.5 text-sm"
                 >
-                  {busy ? "Signing…" : "SIWE login"}
+                  Logout
                 </button>
               )}
+              <span className="text-xs text-[#0f766e]">Signed in as merchant</span>
             </>
           )}
         </div>
