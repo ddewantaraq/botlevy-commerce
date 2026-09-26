@@ -64,7 +64,14 @@ export function useWalletSiweLogin(opts: {
       await onSignedInRef.current(data);
     } catch (err) {
       clearSiweLoginIntent();
-      setError(err instanceof Error ? err.message : String(err));
+      const message =
+        err instanceof Error ? err.message : String(err);
+      // Rate-limit HTML/plain bodies often surface as JSON parse errors
+      setError(
+        /too many|429|Unexpected token/i.test(message)
+          ? "Server busy (rate limit). Wait a few seconds and try again."
+          : message,
+      );
     } finally {
       signingRef.current = false;
       setBusy(false);

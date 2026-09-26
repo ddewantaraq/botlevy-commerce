@@ -18,6 +18,17 @@ export {
   type WalletSiwePhase,
   type SiweLoginResult,
 } from "./use-wallet-siwe-login";
+export {
+  isOnboardingDone,
+  markOnboardingDone,
+  type OnboardingApp,
+} from "./onboarding-storage";
+export {
+  LOGIN_HELP,
+  COOKER_ONBOARDING_STEPS,
+  MERCHANT_ONBOARDING_STEPS,
+  type OnboardingStep,
+} from "./onboarding-copy";
 export { MOCK_USDC_ABI, formatMusdc, parseMusdc } from "./token";
 export {
   speakText,
