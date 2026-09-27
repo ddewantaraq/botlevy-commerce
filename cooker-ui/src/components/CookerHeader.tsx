@@ -50,39 +50,42 @@ export function CookerHeader({
   return (
     <header className="shrink-0 border-b border-[var(--line)] bg-[var(--canvas)]/90 px-4 py-3 backdrop-blur">
       <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-        <div>
-          <p className="text-base font-semibold text-[var(--ink)]">Botlevy Cooker</p>
-          <p className="text-xs">{statusLine}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {!signedIn ? (
-            <div className="flex items-start gap-2">
-              <div className="flex flex-col items-end gap-1">
-                <button
-                  type="button"
-                  disabled={walletBusy}
-                  onClick={onLogin}
-                  className="min-h-11 rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50 sm:min-h-0 sm:px-3 sm:py-1.5 sm:text-xs"
-                >
-                  {buttonLabel}
-                </button>
-                {!hasInjectedProvider() ? (
-                  <span className="max-w-[11rem] text-right text-[10px] text-[var(--muted)]">
-                    Opens MetaMask app on phone
-                  </span>
-                ) : null}
-                {walletError || connectError ? (
-                  <span className="max-w-[14rem] text-right text-[10px] text-red-600">
-                    {walletError ||
-                      connectError?.message ||
-                      "Connect failed"}
-                  </span>
-                ) : null}
-              </div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="text-base font-semibold text-[var(--ink)]">
+              Botlevy Cooker
+            </p>
+            {!signedIn ? (
               <LoginInfoButton onClick={onOpenLoginHelp} />
-            </div>
-          ) : (
+            ) : null}
+          </div>
+          <p className="text-xs text-[var(--muted)]">{statusLine}</p>
+        </div>
+
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          {!signedIn ? (
             <>
+              <button
+                type="button"
+                disabled={walletBusy}
+                onClick={onLogin}
+                className="whitespace-nowrap rounded-lg bg-[var(--accent)] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 sm:px-4 sm:text-sm"
+              >
+                {buttonLabel}
+              </button>
+              {!hasInjectedProvider() ? (
+                <span className="text-[10px] text-[var(--muted)]">
+                  Opens MetaMask app on phone
+                </span>
+              ) : null}
+              {walletError || connectError ? (
+                <span className="max-w-[12rem] text-right text-[10px] text-red-600">
+                  {walletError || connectError?.message || "Connect failed"}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <div className="flex items-center gap-2">
               <span className="hidden font-mono text-[10px] sm:inline">
                 {address?.slice(0, 6)}…{address?.slice(-4)}
               </span>
@@ -103,7 +106,7 @@ export function CookerHeader({
                   Logout
                 </button>
               )}
-            </>
+            </div>
           )}
         </div>
       </div>
